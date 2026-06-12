@@ -1,0 +1,98 @@
+GAMES = [
+    {
+        "name": "Counter-Strike 2",
+        "appid": 730,
+        "genre": "FPS",
+        "type": "core",
+    },
+    {
+        "name": "Team Fortress 2",
+        "appid": 440,
+        "genre": "FPS",
+        "type": "core",
+    },
+    {
+        "name": "Apex Legends",
+        "appid": 1172470,
+        "genre": "Battle Royale",
+        "type": "core",
+    },
+    {
+        "name": "PUBG: BATTLEGROUNDS",
+        "appid": 578080,
+        "genre": "Battle Royale",
+        "type": "core",
+    },
+    {
+        "name": "Dota 2",
+        "appid": 570,
+        "genre": "MOBA",
+        "type": "core",
+    },
+    {
+        "name": "SMITE",
+        "appid": 386360,
+        "genre": "MOBA",
+        "type": "core",
+    },
+    {
+        "name": "Path of Exile",
+        "appid": 238960,
+        "genre": "RPG",
+        "type": "core",
+    },
+    {
+        "name": "ELDEN RING",
+        "appid": 1245620,
+        "genre": "RPG",
+        "type": "core",
+    },
+    {
+        "name": "Rust",
+        "appid": 252490,
+        "genre": "Survival",
+        "type": "core",
+    },
+    {
+        "name": "Palworld",
+        "appid": 1623730,
+        "genre": "Survival",
+        "type": "core",
+    },
+    {
+        "name": "Dead by Daylight",
+        "appid": 381210,
+        "genre": "Horror",
+        "type": "core",
+    },
+    {
+        "name": "Lethal Company",
+        "appid": 1966720,
+        "genre": "Horror",
+        "type": "core",
+    },
+    {
+        "name": "Stardew Valley",
+        "appid": 413150,
+        "genre": "Simulation",
+        "type": "reserve",
+    },
+    {
+        "name": "Factorio",
+        "appid": 427520,
+        "genre": "Simulation",
+        "type": "reserve",
+    },
+    {
+        "name": "TEKKEN 8",
+        "appid": 1778820,
+        "genre": "Fighting",
+        "type": "reserve",
+    },
+    {
+        "name": "Forza Horizon 5",
+        "appid": 1551360,
+        "genre": "Racing",
+        "type": "reserve",
+    },
+]
