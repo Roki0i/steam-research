@@ -23,7 +23,7 @@ CATEGORY_TAGS = {
 # 一部カテゴリだけ集めたい場合は、例: ["RPG", "Strategy"] のように変更する。
 TARGET_CATEGORIES = list(CATEGORY_TAGS.keys())
 
-MAX_GAMES_PER_CATEGORY = 10
+MAX_GAMES_PER_CATEGORY = 100
 
 # Steam Storeに過度なアクセスをしないため、タグごとに間隔を空ける。
 REQUEST_INTERVAL_SEC = 2.0
