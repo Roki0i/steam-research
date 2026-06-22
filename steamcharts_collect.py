@@ -17,11 +17,12 @@ REQUEST_INTERVAL_SEC = 3.0
 REQUEST_TIMEOUT_SEC = 20
 
 DRIVE_DATA_DIR = "/content/drive/MyDrive/卒業研究/steam_research/data"
+GAME_CANDIDATES_FILENAME = "game_candidates.csv"
 
 STEAMCHARTS_MONTHLY_COLUMNS = [
-    "collected_at",
     "appid",
     "name",
+    "category",
     "genre",
     "type",
     "month",
@@ -30,6 +31,7 @@ STEAMCHARTS_MONTHLY_COLUMNS = [
     "gain_percent",
     "peak_players",
     "source_url",
+    "collected_at",
 ]
 
 
@@ -49,6 +51,10 @@ def get_data_dir():
     return local_data_dir
 
 
+def get_game_candidates_path():
+    return os.path.join(get_data_dir(), GAME_CANDIDATES_FILENAME)
+
+
 def save_csv_append_dedup(df, filename, subset_cols):
     """既存CSVに追記し、指定列が同じ行を重複削除して保存する。"""
     if df.empty:
@@ -65,6 +71,13 @@ def save_csv_append_dedup(df, filename, subset_cols):
         combined_df = df.copy()
 
     combined_df = combined_df.drop_duplicates(subset=subset_cols, keep="last")
+    ordered_columns = [
+        column for column in STEAMCHARTS_MONTHLY_COLUMNS if column in combined_df.columns
+    ]
+    other_columns = [
+        column for column in combined_df.columns if column not in ordered_columns
+    ]
+    combined_df = combined_df[ordered_columns + other_columns]
     combined_df.to_csv(file_path, index=False, encoding="utf-8-sig")
     print(f"保存完了: {file_path} ({len(combined_df)}行)")
     return len(combined_df)
@@ -105,13 +118,74 @@ def request_html(url):
     return response.text
 
 
+def load_games_from_candidates():
+    """本分析用の候補CSVからSteamCharts収集対象を読む。"""
+    candidates_path = get_game_candidates_path()
+    candidates_df = pd.read_csv(candidates_path, encoding="utf-8-sig")
+    required_columns = ["appid", "name", "category"]
+    missing_columns = [
+        column for column in required_columns if column not in candidates_df.columns
+    ]
+    if missing_columns:
+        raise ValueError(
+            f"{GAME_CANDIDATES_FILENAME}に必要な列がありません: {missing_columns}"
+        )
+
+    candidates_df = candidates_df.dropna(subset=required_columns)
+    candidates_df = candidates_df.drop_duplicates(
+        subset=["appid", "category"],
+        keep="last",
+    )
+
+    games = []
+    for _, row in candidates_df.iterrows():
+        category = str(row["category"])
+        games.append(
+            {
+                "appid": int(row["appid"]),
+                "name": str(row["name"]),
+                "category": category,
+                # 後方互換用。旧分析コードがgenreを見る場合にも同じカテゴリ名を入れる。
+                "genre": category,
+                "type": "candidate",
+            }
+        )
+
+    return games
+
+
+def load_games_from_games_py():
+    """試作用のgames.pyからSteamCharts収集対象を読む。"""
+    target_games = []
+    for game in GAMES:
+        if game["type"] not in TARGET_TYPES:
+            continue
+
+        game_copy = game.copy()
+        game_copy["category"] = game_copy.get("category", game_copy.get("genre"))
+        target_games.append(game_copy)
+
+    return target_games
+
+
+def load_target_games():
+    candidates_path = get_game_candidates_path()
+    if os.path.exists(candidates_path):
+        print(f"収集対象: {candidates_path} を使用")
+        return load_games_from_candidates(), ["appid", "category", "month"]
+
+    print("収集対象: games.py の GAMES を使用")
+    return load_games_from_games_py(), ["appid", "month"]
+
+
 def make_base_row(game, collected_at):
     return {
-        "collected_at": collected_at,
         "appid": game["appid"],
         "name": game["name"],
+        "category": game.get("category", game.get("genre")),
         "genre": game["genre"],
         "type": game["type"],
+        "collected_at": collected_at,
     }
 
 
@@ -168,7 +242,7 @@ def fetch_steamcharts_monthly(game):
 
 
 def collect_steamcharts_monthly():
-    target_games = [game for game in GAMES if game["type"] in TARGET_TYPES]
+    target_games, dedup_cols = load_target_games()
     all_rows = []
 
     print(f"対象ゲーム数: {len(target_games)}")
@@ -195,7 +269,7 @@ def collect_steamcharts_monthly():
     saved_rows = save_csv_append_dedup(
         result_df,
         "steamcharts_monthly.csv",
-        ["appid", "month"],
+        dedup_cols,
     )
     print(f"最終保存件数: {saved_rows}行")
 
