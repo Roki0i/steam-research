@@ -55,6 +55,7 @@ Steamゲームにおけるジャンル別プレイヤー離脱傾向を分析す
 | データ       | 内容                  | 保存ファイル                |
 | --------- | ------------------- | --------------------- |
 | 現在の同時接続者数 | 各ゲームの現在プレイヤー数       | `current_players.csv` |
+| SteamCharts月次プレイヤー数 | 過去の月次平均・増減・ピークプレイヤー数 | `steamcharts_monthly.csv` |
 | レビュー概要    | レビュー評価、肯定・否定レビュー数など | `review_summary.csv`  |
 | 生レビュー     | ユーザーが投稿したレビュー本文や評価  | `reviews_raw.csv`     |
 | Steamニュース | ゲームごとのニュース・アップデート情報 | `news.csv`            |
@@ -97,6 +98,7 @@ Steamゲームにおけるジャンル別プレイヤー離脱傾向を分析す
 steam-research/
 ├── games.py
 ├── steam_collect.py
+├── steamcharts_collect.py
 ├── requirements.txt
 ├── README.md
 ├── .gitignore
@@ -107,6 +109,7 @@ steam-research/
 | ------------------ | ------------------------------ |
 | `games.py`         | 収集対象ゲームの一覧を定義                  |
 | `steam_collect.py` | Steam APIからデータを取得しCSV保存するプログラム |
+| `steamcharts_collect.py` | SteamChartsから過去の月次プレイヤー数を取得しCSV保存するプログラム |
 | `requirements.txt` | 使用するPythonライブラリ                |
 | `README.md`        | 研究目的・実行方法・構成説明                 |
 | `.gitignore`       | GitHubに含めないファイルの設定             |
@@ -119,6 +122,7 @@ steam-research/
 * Python
 * requests
 * pandas
+* BeautifulSoup
 * GitHub
 * Google Colab
 * Google Drive
@@ -174,6 +178,12 @@ drive.mount('/content/drive')
 !python steam_collect.py
 ```
 
+### SteamCharts月次データを収集
+
+```python
+!python steamcharts_collect.py
+```
+
 ### 保存結果を確認
 
 ```python
@@ -190,6 +200,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python steam_collect.py
+python steamcharts_collect.py
 ```
 
 ---
@@ -224,9 +235,95 @@ TARGET_TYPES = ["core", "reserve"]
 
 値を大きくすると取得件数は増えますが、実行時間も長くなります。
 
+### SteamCharts月次データの設定
+
+`steamcharts_collect.py` の上部で、収集対象を変更できます。
+
+```python
+TARGET_TYPES = ["core"]
+REQUEST_INTERVAL_SEC = 3.0
+```
+
+本採用ゲームのみ収集する場合：
+
+```python
+TARGET_TYPES = ["core"]
+```
+
+予備ゲームも含める場合：
+
+```python
+TARGET_TYPES = ["core", "reserve"]
+```
+
+`REQUEST_INTERVAL_SEC` はSteamChartsへのアクセス間隔です。過度なアクセスを避けるため、初期値は3.0秒にしています。
+
 ---
 
-## 13. CSVをGitHubに含めない理由
+## 13. SteamCharts月次データ
+
+Steam公式APIでは、過去の同時接続者数の月次推移を取得できません。そのため、過去プレイヤー数の月次データとしてSteamChartsの各ゲームページを参照します。
+
+SteamChartsはValve公式サービスではありません。研究で利用する場合は出典としてSteamChartsを明記し、短時間に大量アクセスしないように注意してください。
+
+取得元の例：
+
+```text
+https://steamcharts.com/app/730
+https://steamcharts.com/app/440
+https://steamcharts.com/app/1172470
+```
+
+実行コマンド：
+
+```bash
+python steamcharts_collect.py
+```
+
+Google Colabでの実行例：
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+
+!rm -rf steam-research
+!git clone https://github.com/Roki0i/steam-research.git
+%cd steam-research
+!pip install -r requirements.txt
+!python steamcharts_collect.py
+```
+
+保存先は、Google Driveがマウントされている場合は以下です。
+
+```text
+/content/drive/MyDrive/卒業研究/steam_research/data/steamcharts_monthly.csv
+```
+
+Google Driveがない環境では以下です。
+
+```text
+./data/steamcharts_monthly.csv
+```
+
+保存カラム：
+
+| カラム | 内容 |
+| --- | --- |
+| `collected_at` | 収集日時 |
+| `appid` | Steam App ID |
+| `name` | ゲーム名 |
+| `genre` | ジャンル |
+| `type` | `core` または `reserve` |
+| `month` | 対象月 |
+| `avg_players` | 平均プレイヤー数 |
+| `gain` | 前月からの増減 |
+| `gain_percent` | 前月からの増減率 |
+| `peak_players` | 月間ピークプレイヤー数 |
+| `source_url` | 取得元URL |
+
+---
+
+## 14. CSVをGitHubに含めない理由
 
 本研究で取得するCSVデータは、実行するたびに増加します。また、生データはファイルサイズが大きくなる可能性があります。
 
@@ -241,7 +338,7 @@ data/
 
 ---
 
-## 14. データ保存形式
+## 15. データ保存形式
 
 CSVは `utf-8-sig` 形式で保存します。
 
@@ -251,7 +348,7 @@ CSVは `utf-8-sig` 形式で保存します。
 
 ---
 
-## 15. 今後の分析予定
+## 16. 今後の分析予定
 
 今後は、継続的に収集したデータを用いて以下を分析します。
 
@@ -264,7 +361,7 @@ CSVは `utf-8-sig` 形式で保存します。
 
 ---
 
-## 16. 注意点・限界
+## 17. 注意点・限界
 
 本プロジェクトで取得する現在プレイヤー数は、実行時点のスナップショットです。そのため、1回の取得だけではプレイヤー離脱を直接分析することはできません。
 
@@ -274,7 +371,7 @@ CSVは `utf-8-sig` 形式で保存します。
 
 ---
 
-## 17. GitHubリポジトリ
+## 18. GitHubリポジトリ
 
 ```text
 https://github.com/Roki0i/steam-research
