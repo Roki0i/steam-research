@@ -126,6 +126,26 @@ def save_csv_dedup(df, filename, subset_cols):
     return len(combined_df)
 
 
+def print_candidate_summary(df):
+    """候補CSVの重複状態を確認できるよう、最終集計を出力する。"""
+    total_rows = len(df)
+    unique_appids = df["appid"].nunique() if not df.empty else 0
+    duplicate_appid_count = total_rows - unique_appids
+
+    print(f"total rows: {total_rows}")
+    print(f"unique appids: {unique_appids}")
+    print("category counts:")
+
+    if df.empty:
+        print("  (none)")
+    else:
+        category_counts = df["category"].value_counts(sort=False)
+        for category, count in category_counts.items():
+            print(f"  {category}: {count}")
+
+    print(f"duplicate appid count: {duplicate_appid_count}")
+
+
 def to_int(value):
     """appidなどの値を整数にする。変換できない場合はNoneを返す。"""
     if value is None:
@@ -217,12 +237,13 @@ def make_candidate_row(game_data, category, matched_tag, collected_at):
     }
 
 
-def fetch_candidates_by_tag(category, tag):
+def fetch_candidates_by_tag(category, tag, excluded_appids, max_rows):
     collected_at = get_collected_at()
     rows = []
     start = 0
+    selected_appids = set()
 
-    while len(rows) < MAX_GAMES_PER_CATEGORY:
+    while len(rows) < max_rows:
         data = request_store_search(tag, start=start)
         games = parse_store_results(data.get("results_html", ""))
 
@@ -234,10 +255,15 @@ def fetch_candidates_by_tag(category, tag):
             break
 
         for game_data in games:
+            appid = game_data.get("appid")
+            if appid in excluded_appids or appid in selected_appids:
+                continue
+
             row = make_candidate_row(game_data, category, tag, collected_at)
             rows.append(row)
+            selected_appids.add(appid)
 
-            if len(rows) >= MAX_GAMES_PER_CATEGORY:
+            if len(rows) >= max_rows:
                 break
 
         if len(games) < STORE_SEARCH_COUNT:
@@ -249,52 +275,30 @@ def fetch_candidates_by_tag(category, tag):
     return pd.DataFrame(rows, columns=GAME_CANDIDATE_COLUMNS)
 
 
-def select_top_games_for_category(category_df):
-    """各タグのSteam Store検索結果を混ぜて、カテゴリごとに最大件数へ絞る。"""
-    if category_df.empty:
-        return category_df
-
-    df = category_df.copy()
-    tag_names = df["matched_tag"].drop_duplicates().tolist()
-    selected_rows = []
-    selected_appids = set()
-
-    while len(selected_rows) < MAX_GAMES_PER_CATEGORY:
-        added_in_round = False
-
-        for tag in tag_names:
-            tag_df = df[df["matched_tag"] == tag]
-            for _, row in tag_df.iterrows():
-                appid = row["appid"]
-                if appid in selected_appids:
-                    continue
-
-                selected_rows.append(row)
-                selected_appids.add(appid)
-                added_in_round = True
-                break
-
-            if len(selected_rows) >= MAX_GAMES_PER_CATEGORY:
-                break
-
-        if not added_in_round:
-            break
-
-    if not selected_rows:
-        return pd.DataFrame(columns=GAME_CANDIDATE_COLUMNS)
-
-    return pd.DataFrame(selected_rows, columns=GAME_CANDIDATE_COLUMNS)
-
-
-def collect_candidates_for_category(category, tags):
+def collect_candidates_for_category(category, tags, used_appids):
     print(f"カテゴリ収集中: {category}")
     tag_dfs = []
+    category_appids = set()
 
     for tag_index, tag in enumerate(tags, start=1):
+        remaining_count = MAX_GAMES_PER_CATEGORY - len(category_appids)
+        if remaining_count <= 0:
+            break
+
         print(f"  タグ取得({tag_index}/{len(tags)}): {tag}")
 
         try:
-            tag_df = fetch_candidates_by_tag(category, tag)
+            excluded_appids = used_appids | category_appids
+            tag_df = fetch_candidates_by_tag(
+                category,
+                tag,
+                excluded_appids,
+                remaining_count,
+            )
+
+            if not tag_df.empty:
+                category_appids.update(tag_df["appid"].dropna().tolist())
+
             tag_dfs.append(tag_df)
             print(f"  取得件数: {tag} {len(tag_df)}行")
         except Exception as error:
@@ -306,14 +310,17 @@ def collect_candidates_for_category(category, tags):
     if not tag_dfs:
         return pd.DataFrame(columns=GAME_CANDIDATE_COLUMNS)
 
-    category_df = pd.concat(tag_dfs, ignore_index=True)
-    selected_df = select_top_games_for_category(category_df)
+    selected_df = pd.concat(tag_dfs, ignore_index=True)
+    selected_df = selected_df.drop_duplicates(subset=["appid"], keep="first")
+    selected_df = selected_df.head(MAX_GAMES_PER_CATEGORY)
+
     print(f"カテゴリ候補数: {category} {len(selected_df)}本")
     return selected_df
 
 
 def collect_all_candidates():
     all_rows = []
+    used_appids = set()
     target_categories = [
         category for category in TARGET_CATEGORIES if category in CATEGORY_TAGS
     ]
@@ -329,7 +336,9 @@ def collect_all_candidates():
             category_df = collect_candidates_for_category(
                 category,
                 CATEGORY_TAGS[category],
+                used_appids,
             )
+            used_appids.update(category_df["appid"].dropna().tolist())
             all_rows.append(category_df)
         except Exception as error:
             # 1カテゴリで失敗しても、他カテゴリの収集は続ける。
@@ -343,10 +352,14 @@ def collect_all_candidates():
     else:
         result_df = pd.DataFrame(columns=GAME_CANDIDATE_COLUMNS)
 
+    result_df = result_df.dropna(subset=["appid"])
+    result_df = result_df.drop_duplicates(subset=["appid"], keep="first")
+    print_candidate_summary(result_df)
+
     saved_rows = save_csv_dedup(
         result_df,
         "game_candidates.csv",
-        ["appid", "category"],
+        ["appid"],
     )
     print(f"最終保存件数: {saved_rows}行")
 
