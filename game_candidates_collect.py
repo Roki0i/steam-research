@@ -23,7 +23,7 @@ CATEGORY_TAGS = {
 # 一部カテゴリだけ集めたい場合は、例: ["RPG", "Strategy"] のように変更する。
 TARGET_CATEGORIES = list(CATEGORY_TAGS.keys())
 
-MAX_GAMES_PER_CATEGORY = 100
+CANDIDATE_POOL_PER_CATEGORY = 300
 
 # Steam Storeに過度なアクセスをしないため、タグごとに間隔を空ける。
 REQUEST_INTERVAL_SEC = 2.0
@@ -281,7 +281,7 @@ def collect_candidates_for_category(category, tags, used_appids):
     category_appids = set()
 
     for tag_index, tag in enumerate(tags, start=1):
-        remaining_count = MAX_GAMES_PER_CATEGORY - len(category_appids)
+        remaining_count = CANDIDATE_POOL_PER_CATEGORY - len(category_appids)
         if remaining_count <= 0:
             break
 
@@ -312,7 +312,7 @@ def collect_candidates_for_category(category, tags, used_appids):
 
     selected_df = pd.concat(tag_dfs, ignore_index=True)
     selected_df = selected_df.drop_duplicates(subset=["appid"], keep="first")
-    selected_df = selected_df.head(MAX_GAMES_PER_CATEGORY)
+    selected_df = selected_df.head(CANDIDATE_POOL_PER_CATEGORY)
 
     print(f"カテゴリ候補数: {category} {len(selected_df)}本")
     return selected_df
@@ -326,7 +326,7 @@ def collect_all_candidates():
     ]
 
     print(f"対象カテゴリ数: {len(target_categories)}")
-    print(f"カテゴリごとの最大候補数: {MAX_GAMES_PER_CATEGORY}")
+    print(f"カテゴリごとの最大候補数: {CANDIDATE_POOL_PER_CATEGORY}")
     print(f"保存先: {get_data_dir()}")
 
     for category_index, category in enumerate(target_categories, start=1):
@@ -358,7 +358,7 @@ def collect_all_candidates():
 
     saved_rows = save_csv_dedup(
         result_df,
-        "game_candidates.csv",
+        "game_candidates_pool.csv",
         ["appid"],
     )
     print(f"最終保存件数: {saved_rows}行")
