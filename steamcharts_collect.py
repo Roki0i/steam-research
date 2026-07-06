@@ -221,6 +221,15 @@ def fetch_steamcharts_monthly(game):
     if not rows:
         raise ValueError("SteamChartsの月次データがありません")
 
+    has_monthly_history = False
+    for row in rows:
+        if row["month"] != "Last 30 Days":
+            has_monthly_history = True
+            break
+
+    if not has_monthly_history:
+        raise ValueError("SteamChartsの月次履歴データがありません")
+
     return pd.DataFrame(rows, columns=STEAMCHARTS_MONTHLY_COLUMNS)
 
 
