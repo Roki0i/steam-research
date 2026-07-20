@@ -188,7 +188,7 @@ def main():
     top_df = make_top_games(game_decline_df, 10)
     save_csv(top_df, TOP_GAMES_FILENAME)
 
-    target_df = make_top_games(game_decline_df, 3)
+    target_df = make_top_games(game_decline_df, 5)
     save_csv(target_df, FACTOR_TARGET_FILENAME)
 
     print_summary(clean_df, game_decline_df, category_decline_df, top_df, target_df)
