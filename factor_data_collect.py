@@ -13,7 +13,9 @@ REVIEWS_RAW_FILENAME = "factor_reviews_raw.csv"
 REVIEW_SUMMARY_FILENAME = "factor_review_summary.csv"
 NEWS_FILENAME = "factor_news.csv"
 
-MAX_REVIEWS_PER_GAME = 500
+# Steam Review APIは過去の日付を直接指定できないため、新しいレビューから
+# ページをさかのぼる。レビュー数が非常に多いゲーム向けに上限も設ける。
+MAX_REVIEWS_PER_GAME = 10000
 REQUEST_INTERVAL_SEC = 1.5
 REQUEST_TIMEOUT_SEC = 20
 NEWS_COUNT = 100
@@ -98,13 +100,18 @@ def request_json(url, params):
 
 def load_target_games():
     df = pd.read_csv(get_path(TARGET_FILENAME), encoding="utf-8-sig")
-    required_columns = ["appid", "name", "category"]
+    required_columns = ["appid", "name", "category", "largest_drop_month"]
     missing_columns = [column for column in required_columns if column not in df.columns]
     if missing_columns:
         raise ValueError(f"{TARGET_FILENAME}に必要な列がありません: {missing_columns}")
 
     df = df.dropna(subset=required_columns).copy()
     df["appid"] = df["appid"].astype(int)
+    df["largest_drop_month"] = pd.to_datetime(
+        df["largest_drop_month"],
+        errors="coerce",
+    )
+    df = df.dropna(subset=["largest_drop_month"])
     return df.drop_duplicates(subset=["appid"], keep="first")
 
 
@@ -112,6 +119,8 @@ def fetch_reviews(game):
     url = f"https://store.steampowered.com/appreviews/{game['appid']}"
     cursor = "*"
     rows = []
+    drop_month = game["largest_drop_month"].to_period("M")
+    target_start = (drop_month - 2).start_time
 
     while len(rows) < MAX_REVIEWS_PER_GAME:
         params = {
@@ -127,12 +136,15 @@ def fetch_reviews(game):
         if not reviews:
             break
 
+        page_dates = []
         for review in reviews:
             author = review.get("author", {})
             timestamp_created = review.get("timestamp_created")
             review_date = None
             if timestamp_created:
                 review_date = pd.to_datetime(timestamp_created, unit="s", errors="coerce")
+                if not pd.isna(review_date):
+                    page_dates.append(review_date)
 
             rows.append(
                 {
@@ -153,6 +165,11 @@ def fetch_reviews(game):
                     ),
                 }
             )
+
+        # recentは作成日時の新しい順なので、対象期間より古いレビューまで
+        # 到達したら、それ以上のページは取得しない。
+        if page_dates and min(page_dates) < target_start:
+            break
 
         next_cursor = data.get("cursor")
         if not next_cursor or next_cursor == cursor:
@@ -249,6 +266,7 @@ def main():
             "appid": int(game["appid"]),
             "name": game["name"],
             "category": game["category"],
+            "largest_drop_month": game["largest_drop_month"],
         }
         print(f"収集中: {game_info['name']} ({game_info['appid']})")
 
@@ -256,6 +274,14 @@ def main():
             reviews_df = fetch_reviews(game_info)
             all_reviews.append(reviews_df)
             print(f"  reviews: {len(reviews_df)}")
+            drop_month = game_info["largest_drop_month"].to_period("M")
+            start_month = drop_month - 2
+            end_month = drop_month + 2
+            around_drop = pd.to_datetime(
+                reviews_df["review_date"],
+                errors="coerce",
+            ).dt.to_period("M").between(start_month, end_month)
+            print(f"  reviews around drop: {around_drop.sum()}")
         except Exception as error:
             print(f"  レビュー取得エラー: {error}")
         time.sleep(REQUEST_INTERVAL_SEC)

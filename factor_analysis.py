@@ -203,9 +203,12 @@ def make_game_summary(target_df, review_monthly_df, news_monthly_df, reviews_wit
             target_months = []
         else:
             center_month = largest_drop_month.to_period("M")
-            start_month = center_month - 1
-            end_month = center_month + 1
-            target_months = [str(start_month), str(center_month), str(end_month)]
+            start_month = center_month - 2
+            end_month = center_month + 2
+            target_months = [
+                str(center_month + offset)
+                for offset in range(-2, 3)
+            ]
 
         review_part = review_monthly_df[
             (review_monthly_df["appid"] == appid)
@@ -228,7 +231,10 @@ def make_game_summary(target_df, review_monthly_df, news_monthly_df, reviews_wit
         if start_month is not None:
             review_keyword_part = review_keyword_part[
                 review_keyword_part["review_date"].dt.to_period("M").isin(
-                    [start_month, start_month + 1, end_month]
+                    [
+                        largest_drop_month.to_period("M") + offset
+                        for offset in range(-2, 3)
+                    ]
                 )
             ]
 
