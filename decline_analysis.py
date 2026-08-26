@@ -91,7 +91,9 @@ def make_game_decline_summary(clean_df):
         ) / game_df["prev_avg_players"]
         game_df.loc[game_df["prev_avg_players"] <= 0, "monthly_drop_rate"] = None
 
-        drop_df = game_df.dropna(subset=["monthly_drop_rate"])
+        drop_df = game_df[
+            game_df["month_date"] > peak_row["month_date"]
+        ].dropna(subset=["monthly_drop_rate"])
         if drop_df.empty:
             largest_drop_row = latest_row
             largest_monthly_drop_rate = None
