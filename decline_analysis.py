@@ -63,7 +63,12 @@ def load_and_clean():
 
     df = pd.read_csv(input_path, encoding="utf-8-sig")
     df = df[df["month"] != "Last 30 Days"].copy()
-    df["month_date"] = pd.to_datetime(df["month"], errors="coerce")
+    # SteamChartsの月表記は "January 2024" の形式なので明示的に解析する。
+    df["month_date"] = pd.to_datetime(
+        df["month"],
+        format="%B %Y",
+        errors="coerce",
+    )
 
     for column in ["avg_players", "peak_players", "gain", "gain_percent"]:
         df[column] = to_number(df[column])
