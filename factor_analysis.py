@@ -1,5 +1,21 @@
+"""Steamゲーム急減期の要因候補分析（12か月固定主分析対応）。
+
+主目的:
+- 12か月固定衰退率が大きい50作品について、ピーク後12か月以内の
+  最大月次下落月の前後2か月に公開されたSteam公式ニュースを分析する。
+- ニュース本文・タイトルからイベント候補をキーワード支援で抽出する。
+
+重要:
+- Steam公式ニュースは開発・運営側が公開した情報であり、人口減少の
+  因果関係を直接証明するものではない。
+- 自動分類は「要因候補の抽出」であり、最終的な理由付けは手動確認する。
+- 過去レビュー本文は取得制約が大きいため、対象時期まで取得できた作品のみ
+  補助証拠として利用する。
+"""
+
 import os
 import re
+from collections import Counter
 
 import pandas as pd
 
@@ -13,6 +29,7 @@ STATUS_FILENAME = "factor_collection_status_12m.csv"
 
 REVIEW_MONTHLY_FILENAME = "factor_review_monthly_12m.csv"
 NEWS_MONTHLY_FILENAME = "factor_news_monthly_12m.csv"
+NEWS_EVENTS_FILENAME = "factor_news_events_12m.csv"
 GAME_SUMMARY_FILENAME = "factor_game_summary_12m.csv"
 CATEGORY_SUMMARY_FILENAME = "factor_category_summary_12m.csv"
 EVIDENCE_FILENAME = "factor_evidence_12m.csv"
@@ -21,8 +38,53 @@ LABELS_TEMPLATE_FILENAME = "factor_labels_template_12m.csv"
 WINDOW_MONTHS = 2
 MIN_ENGLISH_NEGATIVE_REVIEWS = 5
 
-# 「dead game」など人口減少そのものを表す語は原因候補から除外する。
-KEYWORD_GROUPS = {
+# 公式ニュースから確認できる「イベント候補」。
+# 複数カテゴリへの同時該当を許す。
+NEWS_EVENT_GROUPS = {
+    "maintenance_outage": [
+        "maintenance", "downtime", "outage", "service interruption",
+        "emergency maintenance", "server maintenance", "temporarily unavailable",
+    ],
+    "server_matchmaking": [
+        "server", "servers", "matchmaking", "queue", "latency", "ping",
+        "connection", "disconnect", "region", "network",
+    ],
+    "bug_fix_performance": [
+        "bug fix", "bug fixes", "fixed", "fixes", "crash", "crashes",
+        "stability", "performance", "optimization", "optimisation", "stutter",
+        "frame rate", "fps issue",
+    ],
+    "balance_gameplay": [
+        "balance", "balancing", "nerf", "nerfed", "buff", "buffed",
+        "gameplay change", "gameplay changes", "weapon adjustment",
+        "adjustment", "rework",
+    ],
+    "anti_cheat_security": [
+        "anti-cheat", "anticheat", "anti cheat", "cheat", "cheater",
+        "cheaters", "ban wave", "banned", "security", "exploit",
+    ],
+    "content_release": [
+        "new map", "new maps", "new mode", "new modes", "new character",
+        "new characters", "new hero", "new heroes", "new weapon",
+        "new weapons", "dlc", "expansion", "new content", "content update",
+    ],
+    "season_event": [
+        "season", "seasonal", "event", "anniversary", "festival",
+        "limited-time", "limited time", "holiday event",
+    ],
+    "monetization_sale": [
+        "sale", "discount", "price", "pricing", "bundle", "store",
+        "shop", "premium", "battle pass", "battlepass", "currency",
+        "microtransaction", "microtransactions",
+    ],
+    "general_update_patch": [
+        "update", "patch", "hotfix", "release notes", "patch notes",
+        "changelog", "version",
+    ],
+}
+
+# レビューは補助証拠のみ。対象時期まで取得できた作品に限定して使用する。
+REVIEW_KEYWORD_GROUPS = {
     "bug_crash": [
         "bug", "bugs", "buggy", "crash", "crashes", "crashing",
         "broken", "glitch", "glitches", "freeze", "freezing",
@@ -62,20 +124,33 @@ LABEL_COLUMNS = [
     "target_drop_month",
     "decline_rate_12m",
     "largest_monthly_drop_rate_12m",
+    "news_evidence_valid",
+    "news_count_around_drop",
+    "news_count_drop_month",
+    "main_news_event_group",
+    "main_news_event_share",
+    "evidence_news_1_date",
+    "evidence_news_1_title",
+    "evidence_news_1_url",
+    "evidence_news_1_groups",
+    "evidence_news_2_date",
+    "evidence_news_2_title",
+    "evidence_news_2_url",
+    "evidence_news_2_groups",
+    "evidence_news_3_date",
+    "evidence_news_3_title",
+    "evidence_news_3_url",
+    "evidence_news_3_groups",
     "review_target_reached",
+    "review_support_available",
     "review_count_around_drop",
     "negative_rate_around_drop",
-    "english_negative_reviews_around_drop",
-    "factor_evidence_valid",
-    "main_keyword_group",
-    "main_keyword_share",
-    "news_count_around_drop",
-    "evidence_review",
-    "evidence_news_title",
-    "evidence_news_url",
+    "review_main_keyword_group",
+    "review_main_keyword_share",
     "manual_reason_label",
     "competitor_candidate",
     "manual_evidence_note",
+    "confidence",
     "memo",
 ]
 
@@ -104,14 +179,25 @@ def require_csv(filename, required_columns=None):
     path = get_path(filename)
     if not os.path.exists(path):
         raise FileNotFoundError(
-            f"入力CSVが見つかりません: {path}\n"
-            "前段のスクリプトを実行してください。"
+            f"入力CSVが見つかりません: {path}\n前段のスクリプトを実行してください。"
         )
     df = pd.read_csv(path, encoding="utf-8-sig")
     if required_columns:
-        missing = [c for c in required_columns if c not in df.columns]
+        missing = [column for column in required_columns if column not in df.columns]
         if missing:
             raise ValueError(f"{filename}に必要な列がありません: {missing}")
+    return df
+
+
+def optional_csv(filename, columns=None):
+    path = get_path(filename)
+    if not os.path.exists(path):
+        return pd.DataFrame(columns=columns or [])
+    df = pd.read_csv(path, encoding="utf-8-sig")
+    if columns:
+        for column in columns:
+            if column not in df.columns:
+                df[column] = None
     return df
 
 
@@ -135,34 +221,62 @@ def mentions_group(text, terms):
     return any(re.search(keyword_pattern(term), target) for term in terms)
 
 
-def add_keyword_mentions(reviews_df):
-    result = reviews_df.copy()
-    for group_name, terms in KEYWORD_GROUPS.items():
-        result[f"mention_{group_name}"] = result["review"].apply(
-            lambda text: int(mentions_group(text, terms))
-        )
-    mention_columns = [f"mention_{name}" for name in KEYWORD_GROUPS]
-    result["mention_group_total"] = result[mention_columns].sum(axis=1)
-    return result
+def clean_news_text(value):
+    if pd.isna(value):
+        return ""
+    text = str(value)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\[[^\]]+\]", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def month_distance(start, end):
+    if pd.isna(start) or pd.isna(end):
+        return None
+    return (end.year - start.year) * 12 + (end.month - start.month)
+
+
+def target_months(center):
+    period = center.to_period("M")
+    return [period + offset for offset in range(-WINDOW_MONTHS, WINDOW_MONTHS + 1)]
 
 
 def load_targets():
     required = [
-        "appid", "name", "category", "peak_month", "decline_rate_12m",
-        "largest_drop_month_12m", "largest_monthly_drop_rate_12m",
+        "appid",
+        "name",
+        "category",
+        "peak_month",
+        "decline_rate_12m",
+        "largest_drop_month_12m",
+        "largest_monthly_drop_rate_12m",
     ]
     df = require_csv(TARGET_FILENAME, required)
     df["appid"] = pd.to_numeric(df["appid"], errors="coerce").astype("Int64")
     for column in ["peak_month", "largest_drop_month_12m"]:
         df[column] = pd.to_datetime(df[column], errors="coerce")
-    return df.dropna(subset=["appid", "largest_drop_month_12m"]).copy()
+    return (
+        df.dropna(subset=["appid", "largest_drop_month_12m", "decline_rate_12m"])
+        .drop_duplicates("appid", keep="first")
+        .reset_index(drop=True)
+    )
 
 
 def load_status():
-    df = require_csv(
+    df = optional_csv(
         STATUS_FILENAME,
-        ["appid", "target_drop_month", "review_target_reached", "review_hit_cap"],
+        [
+            "appid",
+            "target_drop_month",
+            "review_target_reached",
+            "review_hit_cap",
+            "review_error",
+            "news_error",
+        ],
     )
+    if df.empty:
+        return df
     df["appid"] = pd.to_numeric(df["appid"], errors="coerce").astype("Int64")
     df["target_drop_month"] = df["target_drop_month"].astype(str)
     df["review_target_reached"] = to_bool_series(df["review_target_reached"])
@@ -170,29 +284,51 @@ def load_status():
     return df.drop_duplicates(["appid", "target_drop_month"], keep="last")
 
 
-def make_review_monthly(reviews_df):
-    if reviews_df.empty:
-        return pd.DataFrame()
-    part = reviews_df.dropna(subset=["review_date"]).copy()
-    part["review_month"] = part["review_date"].dt.to_period("M").astype(str)
-    return (
-        part.groupby(["appid", "name", "category", "review_month"], as_index=False)
-        .agg(
-            review_count=("recommendationid", "count"),
-            positive_count=("voted_up", "sum"),
-        )
-        .assign(
-            negative_count=lambda x: x["review_count"] - x["positive_count"],
-            negative_rate=lambda x: x["negative_count"] / x["review_count"],
-        )
-        .sort_values(["appid", "review_month"])
-    )
+def load_news():
+    required = [
+        "appid",
+        "name",
+        "category",
+        "target_drop_month",
+        "gid",
+        "title",
+        "url",
+        "contents",
+        "news_date",
+    ]
+    df = require_csv(NEWS_FILENAME, required)
+    df["appid"] = pd.to_numeric(df["appid"], errors="coerce").astype("Int64")
+    df["news_date"] = pd.to_datetime(df["news_date"], errors="coerce")
+    df["target_drop_month"] = df["target_drop_month"].astype(str)
+    return df.drop_duplicates(["appid", "gid"], keep="last").copy()
+
+
+def load_reviews():
+    columns = [
+        "appid",
+        "target_drop_month",
+        "recommendationid",
+        "language",
+        "review",
+        "review_date",
+        "voted_up",
+    ]
+    df = optional_csv(REVIEWS_RAW_FILENAME, columns)
+    if df.empty:
+        return df
+    df["appid"] = pd.to_numeric(df["appid"], errors="coerce").astype("Int64")
+    df["review_date"] = pd.to_datetime(df["review_date"], errors="coerce")
+    df["target_drop_month"] = df["target_drop_month"].astype(str)
+    df["voted_up"] = to_bool_series(df["voted_up"])
+    return df.drop_duplicates("recommendationid", keep="last").copy()
 
 
 def make_news_monthly(news_df):
-    if news_df.empty:
-        return pd.DataFrame()
     part = news_df.dropna(subset=["news_date"]).copy()
+    if part.empty:
+        return pd.DataFrame(
+            columns=["appid", "name", "category", "news_month", "news_count"]
+        )
     part["news_month"] = part["news_date"].dt.to_period("M").astype(str)
     return (
         part.groupby(["appid", "name", "category", "news_month"], as_index=False)
@@ -201,106 +337,204 @@ def make_news_monthly(news_df):
     )
 
 
-def target_months(center):
-    period = center.to_period("M")
-    return [period + offset for offset in range(-WINDOW_MONTHS, WINDOW_MONTHS + 1)]
-
-
-def select_evidence_review(negative_english_df, main_group):
-    if negative_english_df.empty or not main_group:
-        return ""
-    column = f"mention_{main_group}"
-    candidates = negative_english_df[negative_english_df[column] > 0].copy()
-    if candidates.empty:
-        return ""
-    candidates = candidates.sort_values(
-        ["mention_group_total", "review_date"],
-        ascending=[False, True],
+def make_review_monthly(reviews_df):
+    if reviews_df.empty:
+        return pd.DataFrame(
+            columns=[
+                "appid", "review_month", "review_count", "positive_count",
+                "negative_count", "negative_rate",
+            ]
+        )
+    part = reviews_df.dropna(subset=["review_date"]).copy()
+    part["review_month"] = part["review_date"].dt.to_period("M").astype(str)
+    monthly = (
+        part.groupby(["appid", "review_month"], as_index=False)
+        .agg(
+            review_count=("recommendationid", "count"),
+            positive_count=("voted_up", "sum"),
+        )
     )
-    text = str(candidates.iloc[0]["review"]).replace("\n", " ").strip()
-    return text[:800]
+    monthly["negative_count"] = monthly["review_count"] - monthly["positive_count"]
+    monthly["negative_rate"] = monthly["negative_count"] / monthly["review_count"]
+    return monthly.sort_values(["appid", "review_month"])
 
 
-def select_evidence_news(news_part, drop_month):
-    if news_part.empty:
-        return "", ""
-    part = news_part.dropna(subset=["news_date"]).copy()
+def make_news_events(news_df, target_df):
+    target_lookup = {
+        int(row["appid"]): row["largest_drop_month_12m"]
+        for _, row in target_df.iterrows()
+    }
+    rows = []
+
+    for _, item in news_df.iterrows():
+        if pd.isna(item["appid"]) or pd.isna(item["news_date"]):
+            continue
+        appid = int(item["appid"])
+        drop_month = target_lookup.get(appid)
+        if drop_month is None or pd.isna(drop_month):
+            continue
+
+        relative_month = month_distance(drop_month, item["news_date"])
+        if relative_month is None or abs(relative_month) > WINDOW_MONTHS:
+            continue
+
+        title = clean_news_text(item.get("title", ""))
+        contents = clean_news_text(item.get("contents", ""))
+        text = f"{title} {contents}".strip()
+
+        matched_groups = []
+        row = {
+            "appid": appid,
+            "name": item.get("name", ""),
+            "category": item.get("category", ""),
+            "target_drop_month": str(drop_month.to_period("M")),
+            "news_date": item["news_date"],
+            "relative_month": relative_month,
+            "gid": item.get("gid"),
+            "title": title,
+            "url": item.get("url", ""),
+        }
+
+        for group_name, terms in NEWS_EVENT_GROUPS.items():
+            mentioned = int(mentions_group(text, terms))
+            row[f"mention_{group_name}"] = mentioned
+            if mentioned:
+                matched_groups.append(group_name)
+
+        row["matched_group_count"] = len(matched_groups)
+        row["matched_groups"] = ";".join(matched_groups)
+        rows.append(row)
+
+    columns = [
+        "appid", "name", "category", "target_drop_month", "news_date",
+        "relative_month", "gid", "title", "url",
+    ]
+    columns += [f"mention_{name}" for name in NEWS_EVENT_GROUPS]
+    columns += ["matched_group_count", "matched_groups"]
+
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows)[columns].sort_values(["appid", "news_date"])
+
+
+def review_supplement(appid, drop_month, reviews_df, status_row):
+    result = {
+        "review_target_reached": False,
+        "review_hit_cap": False,
+        "review_support_available": False,
+        "review_count_around_drop": 0,
+        "negative_rate_around_drop": None,
+        "english_negative_reviews_around_drop": 0,
+        "review_main_keyword_group": "",
+        "review_main_keyword_share": None,
+    }
+
+    if status_row is not None:
+        result["review_target_reached"] = bool(status_row["review_target_reached"])
+        result["review_hit_cap"] = bool(status_row["review_hit_cap"])
+
+    if reviews_df.empty or not result["review_target_reached"]:
+        return result
+
+    months = target_months(drop_month)
+    part = reviews_df[reviews_df["appid"] == appid].copy()
+    part = part[part["review_date"].dt.to_period("M").isin(months)]
+    result["review_count_around_drop"] = len(part)
     if part.empty:
-        row = news_part.iloc[0]
-        return str(row.get("title", "")), str(row.get("url", ""))
+        return result
+
+    negative_count = int((~part["voted_up"]).sum())
+    result["negative_rate_around_drop"] = negative_count / len(part)
+
+    negative_english = part[
+        (~part["voted_up"])
+        & (part["language"].astype(str).str.lower() == "english")
+    ].copy()
+    result["english_negative_reviews_around_drop"] = len(negative_english)
+
+    if len(negative_english) < MIN_ENGLISH_NEGATIVE_REVIEWS:
+        return result
+
+    counts = {}
+    for group_name, terms in REVIEW_KEYWORD_GROUPS.items():
+        counts[group_name] = int(
+            negative_english["review"].apply(
+                lambda text: int(mentions_group(text, terms))
+            ).sum()
+        )
+
+    if counts and max(counts.values()) > 0:
+        main_group = max(counts, key=counts.get)
+        result["review_main_keyword_group"] = main_group
+        result["review_main_keyword_share"] = (
+            counts[main_group] / len(negative_english)
+        )
+    result["review_support_available"] = True
+    return result
+
+
+def choose_evidence(news_part, drop_month, limit=3):
+    if news_part.empty:
+        return []
+    part = news_part.copy()
     center = drop_month.to_period("M").start_time
     part["distance_days"] = (part["news_date"] - center).abs().dt.days
-    row = part.sort_values("distance_days").iloc[0]
-    return str(row.get("title", "")), str(row.get("url", ""))
+    part = part.sort_values(
+        ["matched_group_count", "distance_days", "news_date"],
+        ascending=[False, True, True],
+    )
+    return part.head(limit).to_dict("records")
 
 
-def make_game_summary(target_df, reviews_df, news_df, status_df):
+def status_lookup(status_df):
+    if status_df.empty:
+        return {}
+    lookup = {}
+    for _, row in status_df.iterrows():
+        if pd.isna(row["appid"]):
+            continue
+        lookup[(int(row["appid"]), str(row["target_drop_month"]))] = row
+    return lookup
+
+
+def make_game_summary(target_df, news_events_df, reviews_df, status_df):
     rows = []
     evidence_rows = []
-
-    status_lookup = {
-        (int(row["appid"]), str(row["target_drop_month"])): row
-        for _, row in status_df.iterrows()
-        if pd.notna(row["appid"])
-    }
+    statuses = status_lookup(status_df)
 
     for _, target in target_df.iterrows():
         appid = int(target["appid"])
         drop_month = target["largest_drop_month_12m"]
         drop_period = str(drop_month.to_period("M"))
-        months = target_months(drop_month)
 
-        status = status_lookup.get((appid, drop_period))
-        review_target_reached = bool(
-            status is not None and status["review_target_reached"]
-        )
-        review_hit_cap = bool(status is not None and status["review_hit_cap"])
+        news_part = news_events_df[news_events_df["appid"] == appid].copy()
+        news_count = len(news_part)
+        news_evidence_valid = news_count > 0
 
-        review_part = reviews_df[reviews_df["appid"] == appid].copy()
-        review_part = review_part[
-            review_part["review_date"].dt.to_period("M").isin(months)
-        ]
-
-        review_count = len(review_part)
-        positive_count = int(review_part["voted_up"].sum()) if review_count else 0
-        negative_count = review_count - positive_count
-        negative_rate = negative_count / review_count if review_count > 0 else None
-
-        negative_english = review_part[
-            (~review_part["voted_up"])
-            & (review_part["language"].astype(str).str.lower() == "english")
-        ].copy()
-        english_negative_count = len(negative_english)
-
-        mention_counts = {}
-        mention_rates = {}
-        for group_name in KEYWORD_GROUPS:
+        group_counts = {}
+        group_shares = {}
+        for group_name in NEWS_EVENT_GROUPS:
             column = f"mention_{group_name}"
-            count = int(negative_english[column].sum()) if english_negative_count else 0
-            mention_counts[group_name] = count
-            mention_rates[group_name] = (
-                count / english_negative_count if english_negative_count > 0 else None
-            )
+            count = int(news_part[column].sum()) if news_count else 0
+            group_counts[group_name] = count
+            group_shares[group_name] = count / news_count if news_count else None
 
-        if mention_counts and max(mention_counts.values()) > 0:
-            main_group = max(mention_counts, key=mention_counts.get)
-            main_share = mention_rates[main_group]
+        if group_counts and max(group_counts.values()) > 0:
+            main_news_group = max(group_counts, key=group_counts.get)
+            main_news_share = group_shares[main_news_group]
+        elif news_count > 0:
+            main_news_group = "other_or_unclear"
+            main_news_share = 0.0
         else:
-            main_group = ""
-            main_share = None
+            main_news_group = ""
+            main_news_share = None
 
-        factor_evidence_valid = (
-            review_target_reached
-            and english_negative_count >= MIN_ENGLISH_NEGATIVE_REVIEWS
+        supplement = review_supplement(
+            appid,
+            drop_month,
+            reviews_df,
+            statuses.get((appid, drop_period)),
         )
-
-        evidence_review = select_evidence_review(negative_english, main_group)
-
-        news_part = news_df[news_df["appid"] == appid].copy()
-        news_part = news_part[
-            news_part["news_date"].dt.to_period("M").isin(months)
-        ]
-        news_title, news_url = select_evidence_news(news_part, drop_month)
 
         row = {
             "appid": appid,
@@ -310,75 +544,87 @@ def make_game_summary(target_df, reviews_df, news_df, status_df):
             "target_drop_month": drop_month,
             "decline_rate_12m": target["decline_rate_12m"],
             "largest_monthly_drop_rate_12m": target["largest_monthly_drop_rate_12m"],
-            "review_target_reached": review_target_reached,
-            "review_hit_cap": review_hit_cap,
-            "review_count_around_drop": review_count,
-            "positive_count_around_drop": positive_count,
-            "negative_count_around_drop": negative_count,
-            "negative_rate_around_drop": negative_rate,
-            "english_negative_reviews_around_drop": english_negative_count,
-            "factor_evidence_valid": factor_evidence_valid,
-            "main_keyword_group": main_group,
-            "main_keyword_share": main_share,
-            "news_count_around_drop": len(news_part),
+            "news_evidence_valid": news_evidence_valid,
+            "news_count_around_drop": news_count,
+            "news_count_pre_2m": int((news_part["relative_month"] < 0).sum()) if news_count else 0,
+            "news_count_drop_month": int((news_part["relative_month"] == 0).sum()) if news_count else 0,
+            "news_count_post_2m": int((news_part["relative_month"] > 0).sum()) if news_count else 0,
+            "main_news_event_group": main_news_group,
+            "main_news_event_share": main_news_share,
         }
-        for group_name in KEYWORD_GROUPS:
-            row[f"{group_name}_mentions"] = mention_counts[group_name]
-            row[f"{group_name}_share"] = mention_rates[group_name]
+        for group_name in NEWS_EVENT_GROUPS:
+            row[f"{group_name}_news_mentions"] = group_counts[group_name]
+            row[f"{group_name}_news_share"] = group_shares[group_name]
+        row.update(supplement)
         rows.append(row)
 
-        evidence_rows.append(
-            {
-                "appid": appid,
-                "name": target["name"],
-                "category": target["category"],
-                "target_drop_month": drop_period,
-                "factor_evidence_valid": factor_evidence_valid,
-                "main_keyword_group": main_group,
-                "main_keyword_share": main_share,
-                "evidence_review": evidence_review,
-                "evidence_news_title": news_title,
-                "evidence_news_url": news_url,
-            }
-        )
+        evidence = {
+            "appid": appid,
+            "name": target["name"],
+            "category": target["category"],
+            "target_drop_month": drop_period,
+            "news_evidence_valid": news_evidence_valid,
+            "main_news_event_group": main_news_group,
+            "main_news_event_share": main_news_share,
+        }
+        selected = choose_evidence(news_part, drop_month, limit=3)
+        for index in range(3):
+            prefix = f"evidence_news_{index + 1}"
+            if index < len(selected):
+                item = selected[index]
+                evidence[f"{prefix}_date"] = item.get("news_date")
+                evidence[f"{prefix}_title"] = item.get("title", "")
+                evidence[f"{prefix}_url"] = item.get("url", "")
+                evidence[f"{prefix}_groups"] = item.get("matched_groups", "")
+            else:
+                evidence[f"{prefix}_date"] = ""
+                evidence[f"{prefix}_title"] = ""
+                evidence[f"{prefix}_url"] = ""
+                evidence[f"{prefix}_groups"] = ""
+        evidence_rows.append(evidence)
 
     return pd.DataFrame(rows), pd.DataFrame(evidence_rows)
 
 
 def make_category_summary(game_summary_df):
     rows = []
-    valid = game_summary_df[game_summary_df["factor_evidence_valid"]].copy()
-    for category, category_df in valid.groupby("category"):
-        valid_games = len(category_df)
-        for group_name in KEYWORD_GROUPS:
-            main_count = int((category_df["main_keyword_group"] == group_name).sum())
-            share_values = pd.to_numeric(
-                category_df[f"{group_name}_share"], errors="coerce"
-            )
+    scopes = [("ALL", game_summary_df)]
+    scopes += list(game_summary_df.groupby("category"))
+
+    for category, part in scopes:
+        valid = part[part["news_evidence_valid"]].copy()
+        valid_games = len(valid)
+        for group_name in NEWS_EVENT_GROUPS:
+            mention_column = f"{group_name}_news_mentions"
+            share_column = f"{group_name}_news_share"
+            games_with_event = int((valid[mention_column] > 0).sum()) if valid_games else 0
             rows.append(
                 {
                     "category": category,
-                    "factor_group": group_name,
-                    "valid_games": valid_games,
-                    "main_factor_games": main_count,
-                    "main_factor_proportion": (
-                        main_count / valid_games if valid_games > 0 else None
+                    "event_group": group_name,
+                    "target_games": len(part),
+                    "news_valid_games": valid_games,
+                    "games_with_event": games_with_event,
+                    "game_proportion": (
+                        games_with_event / valid_games if valid_games > 0 else None
                     ),
-                    "mean_negative_review_mention_share": share_values.mean(),
-                    "median_negative_review_mention_share": share_values.median(),
+                    "total_news_mentions": int(valid[mention_column].sum()) if valid_games else 0,
+                    "mean_game_news_share": pd.to_numeric(
+                        valid[share_column], errors="coerce"
+                    ).mean() if valid_games else None,
                 }
             )
     return pd.DataFrame(rows)
 
 
 def make_labels_template(game_summary_df, evidence_df):
+    evidence_columns = ["appid"] + [
+        f"evidence_news_{index}_{field}"
+        for index in range(1, 4)
+        for field in ["date", "title", "url", "groups"]
+    ]
     merged = game_summary_df.merge(
-        evidence_df[
-            [
-                "appid", "evidence_review", "evidence_news_title",
-                "evidence_news_url",
-            ]
-        ],
+        evidence_df[evidence_columns],
         on="appid",
         how="left",
         validate="one_to_one",
@@ -389,40 +635,61 @@ def make_labels_template(game_summary_df, evidence_df):
     return merged[LABEL_COLUMNS]
 
 
+def print_summary(target_df, news_df, news_events_df, game_summary_df):
+    print("\n===== 要因分析サマリー =====")
+    print(f"factor target games: {len(target_df)}")
+    print(f"official news rows collected: {len(news_df)}")
+    print(f"official news rows around drop (±{WINDOW_MONTHS}m): {len(news_events_df)}")
+
+    news_valid = int(game_summary_df["news_evidence_valid"].sum())
+    review_reached = int(game_summary_df["review_target_reached"].sum())
+    review_support = int(game_summary_df["review_support_available"].sum())
+    print(f"news evidence available: {news_valid}/{len(game_summary_df)}")
+    print(f"review target reached: {review_reached}/{len(game_summary_df)} (supplement only)")
+    print(f"review text support usable: {review_support}/{len(game_summary_df)} (supplement only)")
+
+    print("\nmain official-news event groups:")
+    counts = game_summary_df.loc[
+        game_summary_df["news_evidence_valid"], "main_news_event_group"
+    ].value_counts(dropna=False)
+    for group, count in counts.items():
+        print(f"  {group}: {count}")
+
+    print("\ncategory news coverage:")
+    coverage = game_summary_df.groupby("category")["news_evidence_valid"].agg(["count", "sum"])
+    for category, row in coverage.iterrows():
+        print(f"  {category}: {int(row['sum'])}/{int(row['count'])}")
+
+    print("\n注意:")
+    print("- 公式ニュースとの時間的一致は、人口減少の因果関係を証明しない。")
+    print("- 自動カテゴリは要因候補の探索用。factor_labels_template_12m.csvで手動確認する。")
+    print("- 競合作品発売などSteam公式ニュース外の要因は、別途手動・Web調査が必要。")
+
+
 def main():
     print(f"保存先: {get_data_dir()}")
-    print("要因分析: 12か月固定衰退率上位50作品の最大下落月±2か月")
-    print("テキスト要因判定: 英語の低評価レビューのみ")
+    print("要因分析の主証拠: Steam公式ニュース")
+    print("対象窓: 12か月固定衰退率上位50作品の最大下落月±2か月")
+    print("過去レビュー本文: 対象時期まで取得できた作品のみ補助利用")
 
     target_df = load_targets()
+    news_df = load_news()
+    reviews_df = load_reviews()
     status_df = load_status()
-
-    reviews_df = require_csv(
-        REVIEWS_RAW_FILENAME,
-        [
-            "appid", "language", "review", "review_date", "voted_up",
-            "recommendationid",
-        ],
-    )
-    reviews_df["appid"] = pd.to_numeric(reviews_df["appid"], errors="coerce").astype("Int64")
-    reviews_df["review_date"] = pd.to_datetime(reviews_df["review_date"], errors="coerce")
-    reviews_df["voted_up"] = to_bool_series(reviews_df["voted_up"])
-    reviews_df = add_keyword_mentions(reviews_df)
-
-    news_df = require_csv(NEWS_FILENAME, ["appid", "gid", "title", "url", "news_date"])
-    news_df["appid"] = pd.to_numeric(news_df["appid"], errors="coerce").astype("Int64")
-    news_df["news_date"] = pd.to_datetime(news_df["news_date"], errors="coerce")
-
-    review_monthly_df = make_review_monthly(reviews_df)
-    save_csv(review_monthly_df, REVIEW_MONTHLY_FILENAME)
 
     news_monthly_df = make_news_monthly(news_df)
     save_csv(news_monthly_df, NEWS_MONTHLY_FILENAME)
 
+    review_monthly_df = make_review_monthly(reviews_df)
+    save_csv(review_monthly_df, REVIEW_MONTHLY_FILENAME)
+
+    news_events_df = make_news_events(news_df, target_df)
+    save_csv(news_events_df, NEWS_EVENTS_FILENAME)
+
     game_summary_df, evidence_df = make_game_summary(
         target_df,
+        news_events_df,
         reviews_df,
-        news_df,
         status_df,
     )
     save_csv(game_summary_df, GAME_SUMMARY_FILENAME)
@@ -434,23 +701,7 @@ def main():
     labels_df = make_labels_template(game_summary_df, evidence_df)
     save_csv(labels_df, LABELS_TEMPLATE_FILENAME)
 
-    print("\n===== 要因分析サマリー =====")
-    print(f"factor target games: {len(target_df)}")
-    print(f"review coverage reached: {game_summary_df['review_target_reached'].sum()}/{len(game_summary_df)}")
-    print(f"factor evidence valid: {game_summary_df['factor_evidence_valid'].sum()}/{len(game_summary_df)}")
-    print(f"news available around drop: {(game_summary_df['news_count_around_drop'] > 0).sum()}/{len(game_summary_df)}")
-
-    valid = game_summary_df[game_summary_df["factor_evidence_valid"]]
-    if not valid.empty:
-        print("\nmain keyword groups (valid games only):")
-        for factor, count in valid["main_keyword_group"].replace("", "no_keyword").value_counts().items():
-            print(f"  {factor}: {count}")
-    else:
-        print("有効な要因判定対象がありません。収集coverageを確認してください。")
-
-    print("\n注意:")
-    print("- キーワード集計は原因の確定ではなく、要因候補を抽出する探索的分析です。")
-    print("- 最終的な原因ラベルはfactor_labels_template_12m.csvでレビュー・公式ニュースを確認して手動検証してください。")
+    print_summary(target_df, news_df, news_events_df, game_summary_df)
 
 
 if __name__ == "__main__":
