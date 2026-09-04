@@ -10,11 +10,17 @@ CLEAN_FILENAME = "steamcharts_monthly_clean.csv"
 GAME_DECLINE_FILENAME = "game_decline_summary.csv"
 CATEGORY_DECLINE_FILENAME = "category_decline_summary.csv"
 TOP_GAMES_FILENAME = "top_games_by_category.csv"
-FACTOR_TARGET_FILENAME = "factor_target_games.csv"
+FACTOR_TARGET_FILENAME = "factor_target_games_3to12.csv"
 
 FIXED_HORIZONS = (6, 12)
 PRIMARY_HORIZON = 12
 PRIMARY_OUTCOME = "decline_rate_12m"
+
+# 発売・ピーク直後の自然な反動を要因分析から切り離すため、
+# 要因探索ではピーク後3〜12か月の月次下落だけを見る。
+FACTOR_DROP_START_MONTH = 3
+FACTOR_DROP_END_MONTH = 12
+FACTOR_DROP_OUTCOME = "largest_monthly_drop_rate_3to12"
 
 
 def get_data_dir():
@@ -128,12 +134,23 @@ def fixed_horizon_metrics(game_df, peak_row, horizon_months):
     }
 
 
-def largest_drop_metrics(game_df, peak_month, horizon_months=None):
-    """ピーク後の連続した月同士に限定して最大月次下落を返す。"""
-    part = game_df[game_df["month_date"] > peak_month].copy()
-    if horizon_months is not None:
-        end_period = peak_month.to_period("M") + horizon_months
-        part = part[part["month_date"].dt.to_period("M") <= end_period]
+def largest_drop_metrics(
+    game_df,
+    peak_month,
+    start_months=1,
+    end_months=None,
+):
+    """ピーク後の指定月範囲にある、連続月同士の最大月次下落を返す。
+
+    monthly_drop_rateは「前月→当月」の減少率なので、当月がピークから
+    start_months〜end_months後に位置する行だけを候補とする。
+    """
+    peak_period = peak_month.to_period("M")
+    periods = game_df["month_date"].dt.to_period("M")
+
+    part = game_df[periods >= peak_period + start_months].copy()
+    if end_months is not None:
+        part = part[part["month_date"].dt.to_period("M") <= peak_period + end_months]
 
     part = part.dropna(subset=["monthly_drop_rate"])
     if part.empty:
@@ -202,10 +219,21 @@ def make_game_decline_summary(clean_df):
             drop_month, drop_rate = largest_drop_metrics(
                 game_df,
                 peak_row["month_date"],
-                horizon_months=horizon,
+                start_months=1,
+                end_months=horizon,
             )
             row[f"largest_drop_month_{horizon}m"] = drop_month
             row[f"largest_monthly_drop_rate_{horizon}m"] = drop_rate
+
+        late_drop_month, late_drop_rate = largest_drop_metrics(
+            game_df,
+            peak_row["month_date"],
+            start_months=FACTOR_DROP_START_MONTH,
+            end_months=FACTOR_DROP_END_MONTH,
+        )
+        row["largest_drop_month_3to12"] = late_drop_month
+        row["largest_monthly_drop_rate_3to12"] = late_drop_rate
+        row["eligible_factor_3to12"] = late_drop_rate is not None
 
         rows.append(row)
 
@@ -219,6 +247,7 @@ def make_category_decline_summary(game_decline_df):
             game_count=("appid", "count"),
             eligible_6m=("eligible_6m", "sum"),
             eligible_12m=("eligible_12m", "sum"),
+            eligible_factor_3to12=("eligible_factor_3to12", "sum"),
             avg_decline_rate_6m=("decline_rate_6m", "mean"),
             median_decline_rate_6m=("decline_rate_6m", "median"),
             avg_decline_rate_12m=("decline_rate_12m", "mean"),
@@ -226,6 +255,8 @@ def make_category_decline_summary(game_decline_df):
             avg_decline_rate=("decline_rate", "mean"),
             median_decline_rate=("decline_rate", "median"),
             avg_largest_monthly_drop_rate=("largest_monthly_drop_rate", "mean"),
+            avg_largest_monthly_drop_rate_3to12=("largest_monthly_drop_rate_3to12", "mean"),
+            median_largest_monthly_drop_rate_3to12=("largest_monthly_drop_rate_3to12", "median"),
             avg_peak_players=("peak_avg_players", "mean"),
             median_peak_players=("peak_avg_players", "median"),
             avg_latest_players=("latest_avg_players", "mean"),
@@ -237,11 +268,27 @@ def make_category_decline_summary(game_decline_df):
 
 
 def make_top_games(game_decline_df, top_n, outcome=PRIMARY_OUTCOME):
-    """主分析対象のみからカテゴリごとの衰退率上位作品を抽出する。"""
+    """指定指標が有効な作品からカテゴリごとの上位作品を抽出する。"""
     eligible = game_decline_df.dropna(subset=[outcome]).copy()
     return (
         eligible.sort_values(
             ["category", outcome],
+            ascending=[True, False],
+        )
+        .groupby("category", as_index=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+
+def make_factor_targets(game_decline_df, top_n=5):
+    """12か月主分析対象のうち、ピーク後3〜12か月の急減が大きい作品を抽出。"""
+    eligible = game_decline_df.dropna(
+        subset=[PRIMARY_OUTCOME, FACTOR_DROP_OUTCOME, "largest_drop_month_3to12"]
+    ).copy()
+    return (
+        eligible.sort_values(
+            ["category", FACTOR_DROP_OUTCOME],
             ascending=[True, False],
         )
         .groupby("category", as_index=False)
@@ -256,8 +303,13 @@ def print_summary(clean_df, game_decline_df, category_decline_df, top_df, target
     print(f"game_decline rows: {len(game_decline_df)}")
     print(f"category_decline rows: {len(category_decline_df)}")
     print(f"top_games_by_category rows: {len(top_df)}")
-    print(f"factor_target_games rows: {len(target_df)}")
-    print(f"top/factor selection metric: {PRIMARY_OUTCOME}")
+    print(f"factor_target_games_3to12 rows: {len(target_df)}")
+    print(f"statistical top selection metric: {PRIMARY_OUTCOME}")
+    print(f"factor selection metric: {FACTOR_DROP_OUTCOME}")
+    print(
+        f"factor drop window: peak +{FACTOR_DROP_START_MONTH} to "
+        f"+{FACTOR_DROP_END_MONTH} months"
+    )
     print("category game counts:")
 
     for category, count in game_decline_df["category"].value_counts(sort=False).items():
@@ -274,9 +326,29 @@ def print_summary(clean_df, game_decline_df, category_decline_df, top_df, target
         for category, count in counts.items():
             print(f"    {category}: {count}")
 
-    print("factor target counts (12m primary):")
+    print("factor 3-12m eligible counts:")
+    factor_counts = (
+        game_decline_df.groupby("category")["eligible_factor_3to12"]
+        .sum()
+        .astype(int)
+    )
+    for category, count in factor_counts.items():
+        print(f"  {category}: {count}")
+
+    print("factor target counts (3-12m acute-drop):")
     for category, count in target_df["category"].value_counts().sort_index().items():
         print(f"  {category}: {count}")
+
+    if not target_df.empty:
+        peak_offsets = [
+            month_diff(peak, drop)
+            for peak, drop in zip(
+                pd.to_datetime(target_df["peak_month"]),
+                pd.to_datetime(target_df["largest_drop_month_3to12"]),
+            )
+        ]
+        print("factor target drop-month offsets from peak:")
+        print(pd.Series(peak_offsets).value_counts().sort_index().to_string())
 
 
 def main():
@@ -294,7 +366,7 @@ def main():
     top_df = make_top_games(game_decline_df, 10)
     save_csv(top_df, TOP_GAMES_FILENAME)
 
-    target_df = make_top_games(game_decline_df, 5)
+    target_df = make_factor_targets(game_decline_df, 5)
     save_csv(target_df, FACTOR_TARGET_FILENAME)
 
     print_summary(clean_df, game_decline_df, category_decline_df, top_df, target_df)
