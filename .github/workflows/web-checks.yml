@@ -15,4 +15,5 @@ jobs:
         with:
           node-version: '24'
       - run: node --check web/app.mjs
-      - run: node --test web/tests/model.test.mjs
+      - run: node --check web/csv.mjs
+      - run: node --test web/tests/*.test.mjs
