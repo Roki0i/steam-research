@@ -66,7 +66,7 @@ export function importMonthly(text) {
     try { month = normalizeMonth(r.month_date || r.month); } catch(e) { throw new Error(`${line}行目：${e.message}`); }
     const point = {month, avg: count(r.avg_players, 'avg_players', line), peak: count(r.peak_players || '', 'peak_players', line, true)};
     if (point.peak !== null && point.peak < point.avg) throw new Error(`${line}行目：最大同時接続数が平均より小さくなっています。`);
-    if (!groups.has(id)) groups.set(id, {id, name:r.name, category:r.category || r.genre || '未分類', collected:[], source:`https://steamcharts.com/app/${id}`, monthly:[], news:[], map:new Map()});
+    if (!groups.has(id)) groups.set(id, {id, name:r.name, category:r.category || r.genre || '未分類', collected:[], source:`https://steamcharts.com/app/${id}`, monthly:[], map:new Map()});
     const g = groups.get(id);
     if (g.name !== r.name) throw new Error(`${line}行目：同じappidに異なるゲーム名があります。`);
     if (g.map.has(month)) {
@@ -81,30 +81,4 @@ export function importMonthly(text) {
     g.collected = [...new Set(g.collected)].sort(); delete g.map; return g;
   });
   return {games, duplicateCount};
-}
-function newsDate(row, line) {
-  const value = row.news_date || row.date || '';
-  if (/^\d{9,11}$/.test(value)) {
-    const date = new Date(Number(value) * 1000);
-    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0,10);
-  }
-  const match = /^(\d{4}-\d{2}-\d{2})(?:[ T].*)?$/.exec(value);
-  if (match && !Number.isNaN(Date.parse(match[1])) && new Date(match[1]).toISOString().slice(0,10) === match[1]) return match[1];
-  throw new Error(`${line}行目：ニュースの日付はYYYY-MM-DDかUnix秒にしてください。`);
-}
-export function importNews(text, games) {
-  const records = parseCSV(text); requireColumns(records[0], ['appid', 'title', 'url']);
-  if (!('news_date' in records[0]) && !('date' in records[0])) throw new Error('news_date または date 列が必要です。');
-  const maps = new Map(games.map(g => [g.id, new Map()])); let unmatched = 0;
-  records.forEach((r, i) => {
-    const line = i + 2, id = appId(r.appid, line);
-    if (!maps.has(id)) { unmatched++; return; }
-    let url;
-    try { url = new URL(r.url); if(!['https:', 'http:'].includes(url.protocol)) throw new Error(); } catch { throw new Error(`${line}行目：urlにはhttp:// または https:// で始まる記事URLを入れてください。`); }
-    if (!r.title) throw new Error(`${line}行目：記事タイトルが空です。`);
-    const date = newsDate(r, line);
-    maps.get(id).set(`${date}|${url.href}`, {title:r.title,date,url:url.href});
-  });
-  const result = games.map(g => ({...g, news:[...maps.get(g.id).values()].sort((a,b)=>a.date.localeCompare(b.date))}));
-  return {games:result, unmatched, count:result.reduce((n,g)=>n+g.news.length,0)};
 }

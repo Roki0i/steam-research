@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseCSV,importMonthly,importNews,normalizeMonth} from '../csv.mjs';
+import {parseCSV,importMonthly,normalizeMonth} from '../csv.mjs';
 import {csvText,withChanges} from '../model.mjs';
 import {readFileSync} from 'node:fs';
 const header='appid,name,month,avg_players,peak_players';
@@ -30,18 +30,10 @@ test('identical duplicates collapse while conflicting observations fail atomical
  assert.throws(()=>importMonthly(header+'\n1,Test,2024-01,100,50'),/最大/);
  assert.throws(()=>importMonthly(valid+'\n730,Other,2024-03,80,150'),/異なるゲーム名/);
 });
-test('news import joins by appid, counts unmatched rows, deduplicates and allows only HTTP(S)',()=>{
- const games=importMonthly(valid).games;
- const news='appid,title,url,news_date\n730,Patch,https://example.org/patch,2024-02-05\n2,Other,https://example.org/other,2024-01-01\n730,Patch,https://example.org/patch,2024-02-05';
- const result=importNews(news,games);assert.equal(result.count,1);assert.equal(result.unmatched,1);assert.equal(games[0].news.length,0);
- assert.equal(importNews('appid,title,url,news_date\n730,Old,http://example.org/old,2024-01-01',games).count,1);
- assert.throws(()=>importNews('appid,title,url,date\n730,Patch,javascript:alert(1),1704067200',games),/https/);
- assert.equal(importNews('appid,title,url,date\n730,Patch,https://example.org,1704067200',games).games[0].news[0].date,'2024-01-01');
- assert.throws(()=>importNews('appid,title,url,news_date\n730,Patch,https://example.org,2024-02-30',games),/日付/);
-});
 test('downloaded research data round-trips with decimals and quoted titles',()=>{
  const snapshot=JSON.parse(readFileSync(new URL('../snapshot.json',import.meta.url),'utf8'));
- for(const game of snapshot.games){const imported=importMonthly(csvText(withChanges(game.monthly),game)).games[0];assert.deepEqual(imported.monthly,game.monthly);assert.equal(imported.name,game.name);}
+ const games=[...new Set(snapshot.games.map(g=>g.part))].flatMap(part=>JSON.parse(readFileSync(new URL('../'+part,import.meta.url),'utf8')));
+ for(const game of games){const imported=importMonthly(csvText(withChanges(game.monthly),game)).games[0];assert.deepEqual(imported.monthly,game.monthly);assert.equal(imported.name,game.name);}
  const csv=csvText([{month:'2024-01',avg:1,peak:null}],{id:1,name:'=SUM(A1)',category:'Test'});
  assert.ok(csv.includes("\"'=SUM(A1)\""));
 });

@@ -408,3 +408,11 @@ th,td{font-size:10px;padding:9px 10px}
 .drop-callout b,.drop-callout p,.drop-callout .text-button{font-size:10px}
 .topbar .quiet{font-size:11px}
 }
+/* The player explorer uses the full analysis area. */
+.analysis-grid{grid-template-columns:minmax(0,1fr)}
+.trend-card{padding:26px 30px}
+.chart{height:320px}
+.game-list{max-height:calc(100vh - 405px);overflow:auto;scrollbar-width:thin}
+#more-games{font-size:11px;margin-top:12px}
+.selected-stats strong{font-size:36px}
+@media(max-width:760px){.trend-card{padding:18px 15px}.chart{height:250px}.game-list{max-height:none}.sidebar .genre{display:block}.sidebar .list-count{display:block;margin:10px 0 0}.sidebar .genre{font-size:11px}.selected-stats strong{font-size:27px}#more-games{width:auto;font-size:11px}}

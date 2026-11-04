@@ -1,4 +1,4 @@
-"""Create the public, allowlisted snapshot; never copy raw reviews or news bodies."""
+"""Build the public catalogue and lazy-loaded monthly player data from collected CSV."""
 import argparse
 import csv
 import hashlib
@@ -7,69 +7,54 @@ import math
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
-
-APPIDS = [1091500, 2054970, 2358720, 1272080, 2198150, 646910]
 
 
-def prepare(monthly_path, news_path):
+def prepare(monthly_path, output):
     groups = defaultdict(dict)
-    names = {}
-    categories = {}
+    metadata = {}
     collected = defaultdict(set)
-    with open(monthly_path, encoding="utf-8-sig", newline="") as stream:
+    with open(monthly_path, encoding='utf-8-sig', newline='') as stream:
         for row in csv.DictReader(stream):
-            appid = int(row["appid"])
-            if appid not in APPIDS:
-                continue
-            month = row.get("month_date", "")[:7]
-            datetime.strptime(month, "%Y-%m")
-            avg = float(row["avg_players"])
-            peak = float(row["peak_players"])
-            if not all(math.isfinite(v) and v >= 0 for v in (avg, peak)):
-                raise ValueError("Invalid player count")
-            value = {"month": month, "avg": avg, "peak": peak}
+            appid = int(row['appid'])
+            month = row.get('month_date', '')[:7]
+            datetime.strptime(month, '%Y-%m')
+            avg, peak = float(row['avg_players']), float(row['peak_players'])
+            if not all(math.isfinite(v) and v >= 0 for v in (avg, peak)) or peak < avg:
+                raise ValueError(f'Invalid player count: {appid} {month}')
+            value = {'month': month, 'avg': avg, 'peak': peak}
             if month in groups[appid] and groups[appid][month] != value:
-                raise ValueError(f"Conflicting duplicate: {appid} {month}")
+                raise ValueError(f'Conflicting duplicate: {appid} {month}')
             groups[appid][month] = value
-            names[appid] = row["name"]
-            categories[appid] = row["category"]
-            collected[appid].add(row["collected_at"][:10])
-    news = defaultdict(dict)
-    with open(news_path, encoding="utf-8-sig", newline="") as stream:
-        for row in csv.DictReader(stream):
-            appid = int(row["appid"])
-            if appid not in APPIDS:
-                continue
-            # Use only public article metadata, no contents/author/user identifiers.
-            url = row["url"]
-            if urlparse(url).scheme != "https":
-                continue
-            date = row["news_date"][:10]
-            datetime.strptime(date, "%Y-%m-%d")
-            news[appid][row["gid"]] = {"title": row["title"], "date": date, "url": url}
+            metadata[appid] = {'id': appid, 'name': row['name'], 'category': row['category'],
+                               'source': f'https://steamcharts.com/app/{appid}'}
+            collected[appid].add(row['collected_at'][:10])
     games = []
-    for appid in APPIDS:
-        if not groups[appid]:
-            raise ValueError(f"No observations: {appid}")
-        games.append({"id": appid, "name": names[appid], "category": categories[appid],
-                      "collected": sorted(collected[appid]),
-                      "source": f"https://steamcharts.com/app/{appid}",
-                      "monthly": sorted(groups[appid].values(), key=lambda r: r["month"]),
-                      "news": sorted(news[appid].values(), key=lambda r: r["date"])})
-    return {"schemaVersion": 1, "preparedOn": "2026-11-05", "newsDataset": "factor_news_12m.csv",
-            "monthlyDataset": "steamcharts_monthly_clean.csv",
-            "inputSha256": {Path(p).name: hashlib.sha256(Path(p).read_bytes()).hexdigest()
-                            for p in (monthly_path, news_path)}, "games": games}
+    for appid, values in groups.items():
+        monthly = sorted(values.values(), key=lambda r: r['month'])
+        games.append({**metadata[appid], 'collected': sorted(collected[appid]), 'monthly': monthly})
+    games.sort(key=lambda g: (-g['monthly'][-1]['avg'], g['name']))
+    data_dir = output.parent / 'data'
+    data_dir.mkdir(exist_ok=True)
+    catalogue = []
+    for offset in range(0, len(games), 40):
+        part = f'data/players-{offset // 40:02}.json'
+        batch = games[offset:offset + 40]
+        (output.parent / part).write_text(json.dumps(batch, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        for game in batch:
+            monthly = game['monthly']
+            catalogue.append({k: v for k, v in game.items() if k != 'monthly'} | {
+                'part': part, 'firstMonth': monthly[0]['month'], 'lastMonth': monthly[-1]['month'],
+                'latestAvg': monthly[-1]['avg'], 'months': len(monthly)})
+    result = {'schemaVersion': 2, 'preparedOn': '2026-11-05', 'monthlyDataset': Path(monthly_path).name,
+              'inputSha256': {Path(monthly_path).name: hashlib.sha256(Path(monthly_path).read_bytes()).hexdigest()},
+              'totalMonths': sum(len(g['monthly']) for g in games), 'games': catalogue}
+    output.write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+    print(json.dumps({'games': len(games), 'months': result['totalMonths'], 'parts': math.ceil(len(games) / 40)}))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("monthly_csv")
-    parser.add_argument("news_csv")
-    parser.add_argument("--output", default=str(Path(__file__).resolve().parents[1] / "snapshot.json"))
+    parser.add_argument('monthly_csv')
+    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'snapshot.json')
     args = parser.parse_args()
-    result = prepare(args.monthly_csv, args.news_csv)
-    Path(args.output).write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(json.dumps({"games": len(result["games"]), "months": sum(len(g["monthly"]) for g in result["games"]),
-                      "news": sum(len(g["news"]) for g in result["games"])}, ensure_ascii=False))
+    prepare(args.monthly_csv, args.output)

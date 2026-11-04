@@ -14,7 +14,6 @@ export function periodRows(rows, months) {
 export function largestDrop(rows) {
   return rows.filter(r => r.change !== null && r.change < 0).reduce((best, r) => !best || r.change < best.change ? r : best, null);
 }
-export const nearbyNews = (news, month, window) => news.filter(n => Math.abs(monthIndex(n.date.slice(0, 7)) - monthIndex(month)) <= window);
 export function csvText(rows, game) {
   const quote = value => `"${String(value).replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`;
   const prefix = game ? 'appid,name,category,' : '';
