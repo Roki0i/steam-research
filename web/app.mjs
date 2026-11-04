@@ -216,6 +216,7 @@ async function start(){
     $('sample-csv').onclick=sampleCSV;
     document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
     for(const d of document.querySelectorAll('dialog'))d.addEventListener('click',event=>{if(event.target===d){const r=d.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)d.close();}});
+    document.querySelectorAll('[data-boot]').forEach(control=>control.disabled=false);$('main').setAttribute('aria-busy','false');
     let frame;new ResizeObserver(()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(renderChart);}).observe($('chart'));
   }catch(error){$('explorer').hidden=true;$('status').hidden=false;$('status').replaceChildren(el('p','データを読み込めませんでした。ページを再読み込みしてください。'));const retry=el('button','再読み込み','button secondary');retry.onclick=()=>location.reload();$('status').append(retry);console.error(error);}
 }
