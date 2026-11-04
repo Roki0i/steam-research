@@ -1,7 +1,7 @@
 import {withChanges, periodRows, largestDrop, csvText, monthIndex} from './model.mjs';
 import {importMonthly} from './csv.mjs';
 const $ = id => document.getElementById(id);
-const number = n => n === null ? '—' : new Intl.NumberFormat('ja-JP', {maximumFractionDigits:0}).format(n);
+const number = n => n === null ? '—' : new Intl.NumberFormat('ja-JP', {maximumFractionDigits:n!==0&&Math.abs(n)<100?2:0}).format(n);
 const percent = n => n === null ? '計算なし' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}%`;
 const monthLabel = m => `${m.slice(0,4)}年${Number(m.slice(5,7))}月`;
 const shortMonth = m => `${m.slice(0,4)}/${m.slice(5,7)}`;
