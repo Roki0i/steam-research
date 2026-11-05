@@ -18,7 +18,7 @@ test('published snapshot contains only intended public fields and valid observat
  assert.equal(snapshot.schemaVersion,2);assert.equal(snapshot.games.length,1000);
  const batches=new Map([...new Set(snapshot.games.map(g=>g.part))].map(part=>[part,JSON.parse(readFileSync(new URL('../'+part,import.meta.url),'utf8'))]));
  assert.equal([...batches.values()].flat().reduce((n,g)=>n+g.monthly.length,0),snapshot.totalMonths);
- assert.equal(snapshot.totalMonths,56096);
+ assert.ok(snapshot.totalMonths>=56096);
  for(const entry of snapshot.games){
   const g=batches.get(entry.part).find(g=>g.id===entry.id);assert.ok(g);
   assert.equal(entry.latestAvg,g.monthly.at(-1).avg);assert.equal(entry.lastMonth,g.monthly.at(-1).month);

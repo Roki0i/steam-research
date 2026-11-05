@@ -17,3 +17,8 @@ jobs:
       - run: node --check web/app.mjs
       - run: node --check web/csv.mjs
       - run: node --test web/tests/*.test.mjs
+      - run: node --check web/dataset.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s web/tests -p 'test_*.py'

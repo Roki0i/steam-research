@@ -1,3 +1,4 @@
+import {loadCatalogue, updateSummary, checkedDate, validPart} from './dataset.mjs';
 import {withChanges, periodRows, largestDrop, csvText, monthIndex} from './model.mjs';
 import {importMonthly} from './csv.mjs';
 const $ = id => document.getElementById(id);
@@ -7,6 +8,7 @@ const monthLabel = m => `${m.slice(0,4)}年${Number(m.slice(5,7))}月`;
 const shortMonth = m => `${m.slice(0,4)}/${m.slice(5,7)}`;
 const colors = [['#e2ebff','#b4c6ed'],['#f4e6e0','#d7b4a4'],['#f0e8d6','#d8bf85'],['#e4e1f9','#bcb0e1'],['#e5efe0','#b2cba1'],['#e1ecee','#9fc5cd']];
 const marks = {1091500:'C',2054970:'D',2358720:'W',1272080:'P',2198150:'T',646910:'2'};
+let dataBase = './', usingFallback = false;
 let sample, data, game, rows = [], selected, period = 0, local = false, localSummary = '', monthlyName = '', toastTimer, visibleGames = 50, selectionTicket = 0;
 const partCache = new Map();
 function el(tag, text, cls) { const node=document.createElement(tag); if(text!==undefined)node.textContent=text; if(cls)node.className=cls; return node; }
@@ -20,8 +22,8 @@ function syncUrl() {
 }
 function renderDataset() {
   $('dataset-title').textContent=local?'自分のCSV':'取得済みデータ';
-  $('dataset-detail').textContent=local?`${data.games.length}タイトル / このタブ内だけで使用`:`${sample.games.length.toLocaleString()}タイトル / 2026-08-25収集`;
-  $('footer-data').textContent=local?'自分のCSV · 再読み込みで取得済みデータに戻ります':`${sample.games.length.toLocaleString()}タイトル · 2026-08-25収集 · 自動更新なし`;
+  $('dataset-detail').textContent=local?`${data.games.length}タイトル / このタブ内だけで使用`:`${sample.games.length.toLocaleString()}タイトル / 毎月更新`;
+  $('footer-data').textContent=local?'自分のCSV · 再読み込みで取得済みデータに戻ります':`${updateSummary(sample)}${usingFallback?' · 通信できないため同梱データ':''}`;
   $('reset-data').hidden=!local;$('footer-reset').hidden=!local;
   $('share').disabled=local;$('share').title=local?'CSVの内容は共有リンクに含められません。':'';
   $('welcome').hidden=local||!game;
@@ -52,7 +54,8 @@ function renderGames() {
 }
 async function loadGame(g) {
   if(g.monthly)return g;
-  if(!partCache.has(g.part))partCache.set(g.part,fetch('./'+g.part).then(async response=>{
+  if(!validPart(g.part))throw new Error('データの保存先が不正です。');
+  if(!partCache.has(g.part))partCache.set(g.part,fetch(dataBase+g.part,{signal:AbortSignal.timeout(15000)}).then(async response=>{
     if(!response.ok)throw new Error('プレイヤー数データを取得できませんでした。');
     const batch=await response.json();
     if(!Array.isArray(batch))throw new Error('データ形式が不正です。');return batch;
@@ -72,7 +75,7 @@ function renderGame(g, requestedMonth) {
   const drop=largestDrop(rows);
   selected=rows.some(r=>r.month===requestedMonth)?requestedMonth:rows.at(-1).month;
   $('game-title').textContent=g.name;$('category').textContent=g.category;$('appid').textContent=`App ID: ${g.id}`;
-  $('observation').textContent=`${monthLabel(rows[0].month)}〜${monthLabel(rows.at(-1).month)} · ${rows.length}か月分${local?' · 自分のCSV':''}`;
+  $('observation').textContent=`${monthLabel(rows[0].month)}〜${monthLabel(rows.at(-1).month)} · ${rows.length}か月分${local?' · 自分のCSV':` · 取得確認 ${checkedDate(g)}`}`;
   $('source').href=g.source;
   document.querySelectorAll('[data-period]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.period)===period)));
   const peak=rows.reduce((a,b)=>b.avg>a.avg?b:a);
@@ -137,7 +140,8 @@ function dataDialog(){
     ['出典の確認','CSV作成者が収集日・取得元・対象の選び方を確認してください。「元データ」はappidに対応するSteamChartsページを開きます。']
   ]:[
     ['取得済みの全タイトル',`${sample.games.length.toLocaleString()}タイトル、${sample.totalMonths.toLocaleString()}か月分の観測値を掲載しています。研究で取得した範囲であり、Steamの全ゲームを網羅するものではありません。`],
-    ['出典と収集日','出典：SteamCharts。2026-08-25に収集した保存値です。観測期間はゲームごとに異なり、現在の人数は表示していません。一覧の人数は各ゲームの保存最終月の平均同時接続数です。'],
+    ['出典と取得状況',`出典：SteamCharts。${updateSummary(sample)}。毎月2日、日本時間9:23頃に取得します。混雑で開始が遅れる場合があります。ゲームごとの取得確認日はグラフ上部に表示します。現在の人数ではなく、保存最終月の平均同時接続数です。`],
+    ['更新できなかった場合',`${usingFallback?'GitHubから読み込めないため、サイトに同梱した保存値を表示しています。':'GitHubに保存した公開データを読み込んでいます。'}取得に失敗したゲームは前の値を残します。一部の確認成功は全件更新を意味しません。`],
     ['計算方法','前月比＝（当月平均÷前月平均−1）×100。連続する暦月があり、前月平均が0より大きい場合のみ計算します。表示期間の先頭月も、元データに直前月があれば比較します。']
   ];
   for(const [heading,body] of entries)content.append(el('h3',heading),el('p',body));
@@ -175,8 +179,7 @@ async function sampleCSV(){
 }
 async function start(){
   try{
-    const response=await fetch('./snapshot.json');if(!response.ok)throw new Error('Snapshot unavailable');
-    sample=await response.json();if(sample.schemaVersion!==2||!sample.games?.length)throw new Error('Invalid snapshot');data=sample;
+    const loaded=await loadCatalogue();sample=loaded.snapshot;dataBase=loaded.base;usingFallback=loaded.fallback;data=sample;
     const params=new URLSearchParams(location.search);if(['0','12','36'].includes(params.get('period')))period=Number(params.get('period'));
     renderDataset();await selectGame(data.games.find(g=>String(g.id)===params.get('game'))??data.games[0],params.get('month'));if(!game)throw new Error('Initial player data unavailable');$('explorer').hidden=false;$('status').hidden=true;$('welcome').hidden=local;renderChart();
     $('search').oninput=$('genre').onchange=$('library-sort').onchange=()=>{visibleGames=50;renderGames();};

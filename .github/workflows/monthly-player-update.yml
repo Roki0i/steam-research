@@ -1,0 +1,64 @@
+name: Monthly player update
+on:
+  schedule:
+    # Every month on day 2 at about 09:23 JST (00:23 UTC).
+    - cron: '23 0 2 * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '0 = all games; smaller runs are labelled as a sample'
+        default: '0'
+        required: true
+        type: string
+  push:
+    paths:
+      - '.github/workflows/monthly-player-update.yml'
+      - 'web/scripts/update_players.py'
+      - 'web/tests/test_update_players.py'
+permissions:
+  contents: read
+concurrency:
+  group: monthly-player-update
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test updater before network access
+        run: python -m unittest discover -s web/tests -p 'test_*.py'
+      - name: Refresh completed calendar months
+        env:
+          # A code push verifies the unattended path using three titles, not a full refresh.
+          REFRESH_LIMIT: ${{ github.event_name == 'push' && '3' || inputs.limit || '0' }}
+        run: python web/scripts/update_players.py --limit "$REFRESH_LIMIT" --report "$RUNNER_TEMP/player-update.json"
+      - name: Validate all published player data
+        if: always()
+        run: node --test web/tests/*.test.mjs
+      - name: Commit validated refresh and status
+        # Also persist failure status and retained old values when the collector fails.
+        if: ${{ !cancelled() && hashFiles('web/snapshot.json') != '' }}
+        run: |
+          node --test web/tests/*.test.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/snapshot.json web/data/
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Refresh monthly player data and update status'
+          git push origin HEAD:main
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: player-update-report
+          path: ${{ runner.temp }}/player-update.json
+          if-no-files-found: ignore
+          retention-days: 14
