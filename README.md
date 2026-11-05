@@ -4,7 +4,7 @@
 
 ## Webアプリ
 
-**[Steam Player Observatoryを開く](https://steam-player-observatory-roki.roki3i.chatgpt.site)**
+**[Steam Player Observatoryを開く](https://roki0i.github.io/steam-research/)**
 
 取得済み1,000タイトルの月次人数データを表示する。ゲーム名／App ID検索、ジャンル絞り込み、名前順・保存最終月の人数順、月次グラフ、期間変更、月選択、前後ボタン、キーボード対応スライダー、月次表、CSV保存、共有リンクに対応する。
 
@@ -12,7 +12,7 @@
 
 ライト／ダーク表示はブラウザ・OSの既定設定（`prefers-color-scheme`）に自動追従する。ページを開いたまま設定が変わっても切り替わり、選択状態は維持する。フォーム・表・グラフ・ダイアログも同じ配色に対応。
 
-### ローカル起動・検証
+GitHub Pages（Settings → Pages → Build and deployment → Source: GitHub Actions）で公開する。初回公開には管理者によるPagesの有効化とデプロイ成功の確認が必要。公開URLは上記。\n\n### ローカル起動・検証
 
 Webアプリは外部パッケージ・APIキー不要。Python 3とNode.js 24を使う。
 
