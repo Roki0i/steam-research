@@ -152,7 +152,9 @@ def largest_drop_metrics(
     if end_months is not None:
         part = part[part["month_date"].dt.to_period("M") <= peak_period + end_months]
 
-    part = part.dropna(subset=["monthly_drop_rate"])
+    # A flat month or an increase is not a decline event. In particular,
+    # do not select a negative "drop" when the entire window is growing.
+    part = part.loc[part["monthly_drop_rate"] > 0]
     if part.empty:
         return None, None
 
