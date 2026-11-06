@@ -126,14 +126,7 @@ main{padding:28px 30px 0;min-width:0;max-width:1600px;width:100%;margin:auto;ali
 .drop-callout .text-button{margin-left:auto;white-space:nowrap;font-size:10px}
 .fine-print{font-size:10px;color:#8b97aa;line-height:1.85}
 .trend-card>.fine-print{margin-top:11px}
-.field-label{display:block;color:#8491a7;font-size:10px;margin-bottom:6px}
 select{border:1px solid #dfe5ef;border-radius:7px;background:var(--paper);color:#52647f;padding:9px 11px;max-width:100%;cursor:pointer}
-#news{max-height:465px;overflow:auto;scrollbar-width:thin}
-#news .more{display:block;width:100%;font-size:10px;margin-top:10px;min-height:34px}
-.empty{background:#f7f9fd;border-radius:9px;padding:19px 14px;margin-top:12px;font-size:11px;line-height:1.9;color:#8493aa}
-.empty b{display:block;color:#526784;margin-bottom:6px}
-.empty .button{font-size:10px;white-space:normal;width:100%;margin-top:13px;min-height:36px}
-.info-icon{font-size:9px;border:1px solid #acb9cd;color:#8d9db8;width:13px;height:13px;line-height:12px;text-align:center;border-radius:50%;flex:none;margin-top:3px}
 .table-card{margin-top:18px;padding:0 22px}
 .table-card summary{list-style:none;display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:18px 0;min-height:68px}
 .table-card summary::-webkit-details-marker{display:none}
@@ -209,7 +202,6 @@ dialog::backdrop{background:#14274566;backdrop-filter:blur(3px)}
 main{padding:25px 22px 0}
 .sidebar{padding:25px 12px}
 .analysis-grid{grid-template-columns:minmax(0,1fr)}
-#news{max-height:360px}
 .chart{height:280px}
 .welcome{padding:15px 36px 15px 15px;gap:10px}
 .welcome p{gap:7px;font-size:10px}
@@ -327,7 +319,6 @@ th,td{font-size:10px;padding:9px 10px}
 .card-heading h3{font-size:16px}
 .card-heading p:not(.eyebrow),.selected-stats p{font-size:12px}
 .selected-stats small{font-size:11px}
-.field-label{font-size:11px}
 .fine-print{font-size:11px}
 .drop-callout b,.drop-callout p,.drop-callout .text-button{font-size:11px}
 .chart-topline{font-size:10px}
@@ -371,7 +362,7 @@ th,td{font-size:10px;padding:9px 10px}
   .secondary,select,.month-navigator select{color:var(--ink);border-color:var(--line)}
   .secondary:hover,.quiet:hover,.icon-button:hover,.game-button:hover{background:#202d42;border-color:#425477}
   .pill,.category-chip,.segments,.file-box em.optional{background:#233047;color:#b9c8e2}
-  .genre,.drop-callout,.empty,th,.dialog-footer,.file-box{background:#192437;border-color:var(--line)}
+  .genre,.drop-callout,th,.dialog-footer,.file-box{background:#192437;border-color:var(--line)}
   .search-wrap,.readonly-badge,.file-box input::file-selector-button{border-color:#3b4b67}
   .game-button[aria-pressed=true]{border-color:#435b9d}
   .game-button[aria-pressed=true] b,.segments button[aria-pressed=true],.month-navigator select,.import-intro b,.import-format summary{color:#b7c5ff}
