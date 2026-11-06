@@ -21,3 +21,12 @@ export function updateSummary(snapshot) {
  return `${day} ${status}（${r.successful}/${r.total}件）`;
 }
 export function checkedDate(game) {return game.lastCheckedAt?.slice(0,10)||game.collected?.at(-1)||'不明';}
+
+// A complete calendar month excludes the current (possibly partial) month.
+export function latestClosedMonth(now=new Date()) {
+ const previous=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-1,1));
+ return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth()+1).padStart(2,'0')}`;
+}
+export function isObservationOutdated(lastMonth,now=new Date()) {
+ return lastMonth<latestClosedMonth(now);
+}
