@@ -1,4 +1,4 @@
-import {loadCatalogue, updateSummary, checkedDate, validPart} from './dataset.mjs';
+import {loadCatalogue, updateSummary, checkedDate, validPart, isObservationOutdated} from './dataset.mjs';
 import {withChanges, periodRows, largestDrop, csvText, monthIndex} from './model.mjs';
 import {importMonthly} from './csv.mjs';
 const $ = id => document.getElementById(id);
@@ -22,7 +22,7 @@ function syncUrl() {
 }
 function renderDataset() {
   $('dataset-title').textContent=local?'自分のCSV':'取得済みデータ';
-  $('dataset-detail').textContent=local?`${data.games.length}タイトル / このタブ内だけで使用`:`${sample.games.length.toLocaleString()}タイトル / 毎月更新`;
+  $('dataset-detail').textContent=local?`${data.games.length}タイトル / このタブ内だけで使用`:`${sample.games.length.toLocaleString()}タイトル / ${updateSummary(sample)}`;
   $('footer-data').textContent=local?'自分のCSV · 再読み込みで取得済みデータに戻ります':`${updateSummary(sample)}${usingFallback?' · 通信できないため同梱データ':''}`;
   $('reset-data').hidden=!local;$('footer-reset').hidden=!local;
   $('share').disabled=local;$('share').title=local?'CSVの内容は共有リンクに含められません。':'';
@@ -76,6 +76,10 @@ function renderGame(g, requestedMonth) {
   selected=rows.some(r=>r.month===requestedMonth)?requestedMonth:rows.at(-1).month;
   $('game-title').textContent=g.name;$('category').textContent=g.category;$('appid').textContent=`App ID: ${g.id}`;
   $('observation').textContent=`${monthLabel(rows[0].month)}〜${monthLabel(rows.at(-1).month)} · ${rows.length}か月分${local?' · 自分のCSV':` · 取得確認 ${checkedDate(g)}`}`;
+  const lastRecordedMonth=g.monthly.at(-1).month;
+  const oldObservation=isObservationOutdated(lastRecordedMonth);
+  $('data-freshness').hidden=!oldObservation;
+  $('data-freshness').textContent=oldObservation?`保存最終月は${monthLabel(lastRecordedMonth)}です。それ以降の月次値は未収録です。`:'';
   $('source').href=g.source;
   document.querySelectorAll('[data-period]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.period)===period)));
   const peak=rows.reduce((a,b)=>b.avg>a.avg?b:a);

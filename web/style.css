@@ -126,31 +126,13 @@ main{padding:28px 30px 0;min-width:0;max-width:1600px;width:100%;margin:auto;ali
 .drop-callout .text-button{margin-left:auto;white-space:nowrap;font-size:10px}
 .fine-print{font-size:10px;color:#8b97aa;line-height:1.85}
 .trend-card>.fine-print{margin-top:11px}
-.news-card{padding:21px 18px;min-width:0}
-.news-card .card-heading{margin-bottom:17px}
-.news-card .eyebrow{font-size:9px;letter-spacing:1px;margin-bottom:5px}
-.news-card .card-heading h3{font-size:19px}
-.news-card .pill{background:var(--blue-light);color:var(--blue);font-size:10px}
 .field-label{display:block;color:#8491a7;font-size:10px;margin-bottom:6px}
 select{border:1px solid #dfe5ef;border-radius:7px;background:var(--paper);color:#52647f;padding:9px 11px;max-width:100%;cursor:pointer}
-.news-card>select{width:100%;font-size:11px;min-height:40px}
-.news-window{font-size:10px;margin:9px 0 8px;color:#96a0b1}
 #news{max-height:465px;overflow:auto;scrollbar-width:thin}
-.news-item{padding:14px 0;border-bottom:1px solid #edf0f5}
-.news-item:last-child{border:0}
-.news-date{display:flex;gap:7px;align-items:center;margin-bottom:5px;font-size:9px;color:#95a0b1}
-.article-type{padding:1px 5px;border-radius:3px;background:#f1f4f9;color:#8090aa;font-size:8px}
-.news-item a{display:block;line-height:1.7;font-size:11px;font-weight:500;color:#42587c;overflow-wrap:anywhere}
-.news-item a:hover{color:var(--blue);text-decoration:underline}
-.news-item a::after{content:' ↗';color:#95a4bd;font-size:10px}
-.news-card>.fine-print{margin-top:17px;font-size:9px}
 #news .more{display:block;width:100%;font-size:10px;margin-top:10px;min-height:34px}
 .empty{background:#f7f9fd;border-radius:9px;padding:19px 14px;margin-top:12px;font-size:11px;line-height:1.9;color:#8493aa}
 .empty b{display:block;color:#526784;margin-bottom:6px}
 .empty .button{font-size:10px;white-space:normal;width:100%;margin-top:13px;min-height:36px}
-.causality{display:flex;gap:9px;border-top:1px solid var(--line);margin-top:17px;padding-top:15px}
-.causality p{font-size:9px;line-height:1.9;color:#8b98ad}
-.causality b{font-weight:600;color:#76869f}
 .info-icon{font-size:9px;border:1px solid #acb9cd;color:#8d9db8;width:13px;height:13px;line-height:12px;text-align:center;border-radius:50%;flex:none;margin-top:3px}
 .table-card{margin-top:18px;padding:0 22px}
 .table-card summary{list-style:none;display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:18px 0;min-height:68px}
@@ -219,27 +201,15 @@ dialog::backdrop{background:#14274566;backdrop-filter:blur(3px)}
 @media(min-width:1550px){main{padding:35px 40px 0}
 .analysis-grid{grid-template-columns:minmax(0,1fr) 340px;gap:23px}
 .trend-card{padding:28px}
-.news-card{padding:25px}
 .chart{height:310px}
 .selected-stats strong{font-size:38px}
 .selected-stats .change-stat strong{font-size:31px}
-.news-item a{font-size:12px}
-.news-card .fine-print,.causality p{font-size:10px}
 }
 @media(max-width:1200px){.app-layout{grid-template-columns:210px minmax(0,1fr)}
 main{padding:25px 22px 0}
 .sidebar{padding:25px 12px}
 .analysis-grid{grid-template-columns:minmax(0,1fr)}
-.news-card{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:22px}
-.news-card .card-heading{grid-column:1;grid-row:1/4;margin:0}
-.news-card>.field-label,.news-card>select,.news-window{grid-column:2}
-.news-card>#news,.news-card>.fine-print,.causality{grid-column:1/-1}
 #news{max-height:360px}
-.news-item{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px}
-.news-date{align-items:start;flex-wrap:wrap;align-content:start;margin:2px 0 0}
-.news-item a{font-size:12px}
-.news-card>.fine-print{font-size:10px}
-.causality p{font-size:10px}
 .chart{height:280px}
 .welcome{padding:15px 36px 15px 15px;gap:10px}
 .welcome p{gap:7px;font-size:10px}
@@ -311,19 +281,6 @@ main{padding:22px 16px 0}
 .drop-callout .text-button{font-size:9px}
 .drop-symbol{width:25px;height:25px;font-size:17px}
 .trend-card>.fine-print{font-size:9px}
-.news-card{padding:17px 15px;gap:0 14px}
-.news-card .card-heading h3{font-size:18px}
-.news-card .eyebrow{font-size:9px}
-.news-card .pill{display:none}
-.news-card>select{font-size:10px;padding:8px;min-height:38px}
-.news-card>.field-label{font-size:9px}
-.news-window{font-size:9px;margin-bottom:11px}
-.news-item{grid-template-columns:1fr;gap:4px;padding:13px 0}
-.news-item a{font-size:12px}
-.news-date{font-size:10px;gap:8px}
-.article-type{font-size:9px}
-.causality p{font-size:10px}
-.news-card>.fine-print{font-size:10px}
 .table-card{padding:0 15px}
 .table-card summary b{font-size:12px}
 .table-card summary small{font-size:9px}
@@ -355,7 +312,6 @@ th,td{font-size:10px;padding:9px 10px}
 .example-button{margin:9px 0 0}
 .selected-stats strong{font-size:24px}
 .drop-callout .text-button{margin-left:33px}
-.news-card{grid-template-columns:1fr 1.1fr}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}
 *{transition:none!important}
@@ -371,12 +327,8 @@ th,td{font-size:10px;padding:9px 10px}
 .card-heading h3{font-size:16px}
 .card-heading p:not(.eyebrow),.selected-stats p{font-size:12px}
 .selected-stats small{font-size:11px}
-.news-item a{font-size:13px}
-.news-date{font-size:11px}
-.article-type{font-size:10px}
-.news-card>select{font-size:12px}
-.field-label,.news-window{font-size:11px}
-.fine-print,.news-card>.fine-print,.causality p{font-size:11px}
+.field-label{font-size:11px}
+.fine-print{font-size:11px}
 .drop-callout b,.drop-callout p,.drop-callout .text-button{font-size:11px}
 .chart-topline{font-size:10px}
 .chart text{font-size:11px}
@@ -399,11 +351,6 @@ th,td{font-size:10px;padding:9px 10px}
 .selected-stats p{font-size:11px}
 .selected-stats small{font-size:10px}
 .chart-topline{font-size:9px}
-.news-card .card-heading h3{font-size:18px}
-.news-card>select{font-size:11px}
-.news-date{font-size:11px}
-.news-item a{font-size:13px}
-.news-card>.fine-print,.causality p{font-size:11px}
 .fine-print{font-size:10px}
 .drop-callout b,.drop-callout p,.drop-callout .text-button{font-size:10px}
 .topbar .quiet{font-size:11px}
@@ -447,4 +394,19 @@ th,td{font-size:10px;padding:9px 10px}
   .toast{background:#dce5ff;color:#162442}
   input::placeholder{color:#a0aec5;opacity:1}
   .skip:focus{background:var(--paper);color:var(--ink)}
+}
+
+/* Data quality cues for comparisons with different last recorded months. */
+.ranking-note{margin:0 4px 12px;color:var(--muted);font-size:11px;line-height:1.6}
+.game-heading .freshness-note{margin-top:8px;color:var(--red);font-size:12px;line-height:1.6}
+@media(max-width:760px){
+  .sidebar h2,.game-button b,.search-wrap input,.genre,.list-count,.ranking-note,.welcome h2,.welcome p,.example-button,.game-heading>div>p,.selected-stats p,.selected-stats small,.chart-topline,.drop-callout b,.drop-callout p,.drop-callout .text-button,.fine-print,.table-card summary small,.table-toolbar .muted,th,td,.app-footer,.app-footer .text-button{font-size:12px}
+  .game-button small,.slider-labels,.month-position,.category-chip,.game-meta .muted{font-size:11px}
+  .game-button{width:190px;min-width:190px}
+  .segments button,.game-actions .button{font-size:12px;min-height:36px}
+  .selected-stats .unit{font-size:12px}
+  .chart text{font-size:11px}
+  .period-peak{display:block;grid-column:1/-1}
+  .selected-stats .period-peak{border-left:none;padding:12px 0 0;border-top:1px solid var(--line)}
+  .game-heading .freshness-note{font-size:12px}
 }
