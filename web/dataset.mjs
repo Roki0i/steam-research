@@ -18,6 +18,12 @@ export function updateSummary(snapshot) {
  if(!r)return '初期データ · 自動更新の初回実行待ち';
  const day=r.lastAttemptAt.slice(0,10);
  const status={success:'全件更新',sample_verified:'一部タイトルで更新動作を確認',partial:'一部取得に失敗',failed:'更新に失敗・保存値を表示'}[r.status]||'更新状況不明';
+ if(r.scope==='full'&&['partial','failed'].includes(r.status)&&
+   Number.isInteger(r.attempted)&&Number.isInteger(r.failed)&&
+   r.attempted>=0&&r.attempted<=r.total){
+  const remaining=r.total-r.attempted;
+  return `${day} ${status}（${r.successful}/${r.total}件成功・${r.failed}件失敗・${remaining}件未処理）`;
+ }
  return `${day} ${status}（${r.successful}/${r.total}件）`;
 }
 export function checkedDate(game) {return game.lastCheckedAt?.slice(0,10)||game.collected?.at(-1)||'不明';}
