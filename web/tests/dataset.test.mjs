@@ -14,6 +14,20 @@ test('rejects paths outside player parts and keeps sample status explicit',()=>{
  assert.match(updateSummary({}),/初回実行待ち/);
 });
 
+test('full refresh failures distinguish successful, failed and unattempted titles',()=>{
+ const report={lastAttemptAt:'2026-11-06T21:03:42Z',scope:'full',
+   status:'partial',attempted:991,successful:960,failed:31,total:1000};
+ const summary=updateSummary({refresh:report});
+ assert.match(summary,/一部取得に失敗/);
+ assert.match(summary,/960\/1000件成功/);
+ assert.match(summary,/31件失敗/);
+ assert.match(summary,/9件未処理/);
+ const failure=updateSummary({refresh:{...report,status:'failed',attempted:0,successful:0,failed:0}});
+ assert.match(failure,/1000件未処理/);
+ const sample=updateSummary({refresh:{...report,status:'sample_verified',scope:'sample',attempted:3,successful:3,failed:0}});
+ assert.doesNotMatch(sample,/未処理/);
+});
+
 test('clearly identifies observation months older than the last closed calendar month',()=>{
  const november=new Date('2026-11-07T00:00:00Z');
  assert.equal(latestClosedMonth(november),'2026-10');
