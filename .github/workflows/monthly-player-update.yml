@@ -6,10 +6,15 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: '0 = all games; smaller runs are labelled as a sample'
+        description: '0 = all targets; positive numbers limit the monthly run or retry'
         default: '0'
         required: true
         type: string
+      retry_failed:
+        description: 'Only retry failed IDs from the last full run; preserve full-run status'
+        default: false
+        required: true
+        type: boolean
   push:
     paths:
       - '.github/workflows/monthly-player-update.yml'
@@ -40,7 +45,11 @@ jobs:
         env:
           # A code push verifies the unattended path using three titles, not a full refresh.
           REFRESH_LIMIT: ${{ github.event_name == 'push' && '3' || inputs.limit || '0' }}
-        run: python web/scripts/update_players.py --limit "$REFRESH_LIMIT" --report "$RUNNER_TEMP/player-update.json"
+          RETRY_FAILED: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_failed && 'true' || 'false' }}
+        run: |
+          arguments=(--limit "$REFRESH_LIMIT" --report "$RUNNER_TEMP/player-update.json")
+          if [ "$RETRY_FAILED" = "true" ]; then arguments+=(--retry-failed); fi
+          python web/scripts/update_players.py "${arguments[@]}"
       - name: Validate all published player data
         if: always()
         run: node --test web/tests/*.test.mjs
