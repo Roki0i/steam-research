@@ -26,6 +26,8 @@ test('full refresh failures distinguish successful, failed and unattempted title
  assert.match(failure,/1000件未処理/);
  const sample=updateSummary({refresh:{...report,status:'sample_verified',scope:'sample',attempted:3,successful:3,failed:0}});
  assert.doesNotMatch(sample,/未処理/);
+ const retried=updateSummary({refresh:report,retry:{successful:2,scope:'retry'}});
+ assert.match(retried,/再取得で2件成功/);
 });
 
 test('clearly identifies observation months older than the last closed calendar month',()=>{
