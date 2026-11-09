@@ -1,0 +1,2 @@
+# Pinned public-site smoke test dependency
+playwright==1.64.1
