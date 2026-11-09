@@ -125,15 +125,29 @@ def load_games(root):
     return catalogue, games
 
 
-def refresh_games(games, now, fetch, allowed, limit=0, pause=time.sleep, interval=3):
+def failed_app_ids(catalogue):
+    """Only explicit prior HTTP failures are eligible; unattempted games await the next full run."""
+    errors = catalogue.get('refresh', {}).get('errors', [])
+    resolved = set(catalogue.get('retry', {}).get('resolvedAppIds', []))
+    return [entry['appid'] for entry in errors
+            if isinstance(entry, dict) and isinstance(entry.get('appid'), int)
+            and entry['appid'] not in resolved]
+
+
+def refresh_games(games, now, fetch, allowed, limit=0, pause=time.sleep, interval=3, selected_ids=None):
     result = copy.deepcopy(games)
-    target = len(games) if limit == 0 else min(limit, len(games))
+    pool = [game for game in result if selected_ids is None or game['id'] in selected_ids]
+    target = len(pool) if limit == 0 else min(limit, len(pool))
+    scope = 'retry' if selected_ids is not None else 'full' if target == len(games) else 'sample'
     report = {'attempted': 0, 'successful': 0, 'failed': 0, 'total': len(games),
-              'scope': 'full' if target == len(games) else 'sample', 'errors': [], 'stopped': False}
+              'scope': scope, 'errors': [], 'stopped': False}
+    if selected_ids is not None:
+        report['retryTargets'] = len(pool)
+        report['updatedAppIds'] = []
     consecutive = 0
     stamp = now.astimezone(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
     for index in range(target):
-        game = result[index]
+        game = pool[index]
         url = f"{ORIGIN}/app/{game['id']}"
         if not allowed(url):
             report['stopped'] = True
@@ -149,6 +163,7 @@ def refresh_games(games, now, fetch, allowed, limit=0, pause=time.sleep, interva
             game['collected'] = sorted(set(game.get('collected', []) + [stamp[:10]]))
             game['lastCheckedAt'] = stamp
             report['successful'] += 1
+            if selected_ids is not None: report['updatedAppIds'].append(game['id'])
             consecutive = 0
         except Exception as error:
             report['failed'] += 1
@@ -162,6 +177,7 @@ def refresh_games(games, now, fetch, allowed, limit=0, pause=time.sleep, interva
     report['lastAttemptAt'] = stamp
     report['status'] = ('failed' if report['successful'] == 0 else
                         'partial' if report['failed'] or report['stopped'] else
+                        'retry_verified' if report['scope'] == 'retry' else
                         'sample_verified' if report['scope'] == 'sample' else 'success')
     return result, report
 
@@ -190,14 +206,25 @@ def write_snapshot(root, previous, games, report):
             catalogue.append({k: v for k, v in game.items() if k != 'monthly'} | {
                 'part': part, 'firstMonth': points[0]['month'], 'lastMonth': points[-1]['month'],
                 'latestAvg': points[-1]['avg'], 'months': len(points)})
-    refresh = report | {'schedule': 'monthly-day-2',
-                        'lastFullSuccessAt': report['lastAttemptAt'] if report['status'] == 'success'
-                        else previous.get('refresh', {}).get('lastFullSuccessAt')}
+    old_refresh = previous.get('refresh')
+    scope = report.get('scope', 'full')
+    # A manual retry or a small push probe must never replace the last full-run status.
+    retain_full = scope in ('retry', 'sample') and old_refresh and old_refresh.get('scope') == 'full'
+    refresh = old_refresh if retain_full else report | {
+        'schedule': 'monthly-day-2',
+        'lastFullSuccessAt': report['lastAttemptAt'] if report['status'] == 'success'
+        else previous.get('refresh', {}).get('lastFullSuccessAt')}
     snapshot = {'schemaVersion': 2, 'preparedOn': report['lastAttemptAt'][:10],
                 'source': 'SteamCharts monthly tables',
                 'baselineDataset': previous.get('baselineDataset', previous.get('monthlyDataset')),
                 'baselineInputSha256': previous.get('baselineInputSha256', previous.get('inputSha256', {})),
                 'totalMonths': sum(len(g['monthly']) for g in games), 'refresh': refresh, 'games': catalogue}
+    if scope == 'retry':
+        resolved = set(previous.get('retry', {}).get('resolvedAppIds', []))
+        snapshot['retry'] = report | {'resolvedAppIds': sorted(resolved | set(report.get('updatedAppIds', [])))}
+    elif retain_full and scope == 'sample':
+        snapshot['probe'] = report
+        if 'retry' in previous: snapshot['retry'] = previous['retry']
     # Commit the catalogue last, after every immutable part is present.
     atomic_json(root / 'snapshot.json', snapshot)
     # Preserve the previous generation and the original bundled baseline for cached readers.
@@ -211,20 +238,25 @@ def main():
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--limit', type=int, default=0, help='0 means all titles; a smaller run is explicitly labelled sample')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--retry-failed', action='store_true',
+                        help='manually retry only unresolved IDs from the last full-run errors')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     if args.limit < 0: parser.error('limit must be non-negative')
     previous, games = load_games(args.root)
+    selected_ids = set(failed_app_ids(previous)) if args.retry_failed else None
+    if args.retry_failed and not selected_ids:
+        parser.error('No unresolved failed title IDs were recorded by the last full run')
     now = datetime.now(timezone.utc)
     try:
         policy = check_robots()
         delay = policy.crawl_delay(USER_AGENT) or 3
         rate = policy.request_rate(USER_AGENT)
         if rate: delay = max(delay, rate.seconds / rate.requests)
-        updated, report = refresh_games(games, now, get_html, lambda url: policy.can_fetch(USER_AGENT, url), args.limit, interval=delay)
+        updated, report = refresh_games(games, now, get_html, lambda url: policy.can_fetch(USER_AGENT, url), args.limit, interval=delay, selected_ids=selected_ids)
     except Exception as error:
         updated = games
-        report = {'attempted': 0, 'successful': 0, 'failed': 0, 'total': len(games), 'scope': 'full',
+        report = {'attempted': 0, 'successful': 0, 'failed': 0, 'total': len(games), 'scope': 'retry' if args.retry_failed else 'full',
                   'status': 'failed', 'stopped': True, 'stopReason': type(error).__name__,
                   'errors': [], 'lastAttemptAt': now.isoformat(timespec='seconds').replace('+00:00', 'Z')}
     if not args.dry_run: write_snapshot(args.root, previous, updated, report)

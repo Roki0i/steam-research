@@ -22,9 +22,17 @@ export function updateSummary(snapshot) {
    Number.isInteger(r.attempted)&&Number.isInteger(r.failed)&&
    r.attempted>=0&&r.attempted<=r.total){
   const remaining=r.total-r.attempted;
-  return `${day} ${status}（${r.successful}/${r.total}件成功・${r.failed}件失敗・${remaining}件未処理）`;
+  const retry=snapshot.retry;
+  const retryNote=retry?.successful>0
+   ? ` · 失敗タイトルの再取得で${retry.successful}件成功`
+   : '';
+  return `${day} ${status}（${r.successful}/${r.total}件成功・${r.failed}件失敗・${remaining}件未処理）${retryNote}`;
  }
- return `${day} ${status}（${r.successful}/${r.total}件）`;
+ const retry=snapshot.retry;
+ const retryNote=retry?.successful>0
+  ? ` · 失敗タイトルの再取得で${retry.successful}件成功`
+  : '';
+ return `${day} ${status}（${r.successful}/${r.total}件）${retryNote}`;
 }
 export function checkedDate(game) {return game.lastCheckedAt?.slice(0,10)||game.collected?.at(-1)||'不明';}
 
