@@ -77,12 +77,66 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(report['attempted'], 5)
         self.assertEqual(report['status'], 'failed')
         self.assertEqual(report['stopReason'], 'Five consecutive failures')
+        self.assertEqual(report['unattemptedAppIds'], [5, 6, 7, 8, 9])
         def blocked(_):
             raise u.AccessBlocked('HTTP 429')
         _, report = u.refresh_games(games, NOW, blocked, lambda _: True,
             selected_ids={1, 2}, pause=lambda _: None)
         self.assertEqual(report['attempted'], 1)
         self.assertEqual(report['stopReason'], 'Access blocked')
+
+    def test_full_run_tracks_exact_unattempted_ids(self):
+        games = [game(i) for i in range(7)]
+        def unavailable(_): raise ValueError('HTTP 500')
+        _, report = u.refresh_games(games, NOW, unavailable, lambda _: True,
+                                    pause=lambda _: None)
+        self.assertEqual(report['attempted'], 5)
+        self.assertEqual(report['unattemptedAppIds'], [5, 6])
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = u.write_snapshot(Path(directory), {'games': []}, games, report)
+            self.assertEqual(snapshot['refresh']['unattemptedAppIds'], [5, 6])
+            self.assertEqual(u.diagnostic_report(snapshot)['fullNotAttemptedAppIds'], [5, 6])
+
+    def test_failure_history_and_offline_diagnostics_are_preserved(self):
+        previous = {'games': [], 'refresh': {
+            'scope': 'full', 'status': 'partial', 'total': 7,
+            'attempted': 6, 'successful': 4, 'failed': 2,
+            'lastAttemptAt': '2026-11-06T00:00:00Z',
+            'errors': [{'appid': 1, 'error': 'HTTP 500'},
+                       {'appid': 2, 'error': 'HTTP 500'}]},
+            'retry': {
+                'scope': 'retry', 'status': 'failed', 'lastAttemptAt': '2026-11-08T00:00:00Z',
+                'errors': [{'appid': 1, 'error': 'HTTP 500'}], 'resolvedAppIds': []}}
+        games = [game(i) for i in range(7)]
+        def fetch(url):
+            if url.endswith('/1'): raise ValueError('HTTP 500')
+            return page()
+        updated, report = u.refresh_games(games, NOW, fetch, lambda _: True,
+            selected_ids={1, 2}, pause=lambda _: None)
+        self.assertEqual(report['unattemptedAppIds'], [])
+        self.assertEqual(report['successful'], 1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshot = u.write_snapshot(root, previous, updated, report)
+            self.assertEqual(snapshot['retry']['resolvedAppIds'], [2])
+            self.assertEqual(snapshot['retryFailureHistory']['1']['failedRetryAttempts'], 2)
+            diagnostics = u.diagnostic_report(snapshot)
+            self.assertEqual(diagnostics['fullNotAttemptedCount'], 1)
+            self.assertIsNone(diagnostics['fullNotAttemptedAppIds'])
+            self.assertEqual(diagnostics['unresolvedFailedCount'], 1)
+            self.assertEqual(diagnostics['unresolvedTitles'][0]['appid'], 1)
+            self.assertEqual(diagnostics['unresolvedTitles'][0]['trackedRetryFailures'], 2)
+            sample, probe = u.refresh_games(updated, NOW, lambda _: page(), lambda _: True,
+                limit=1, pause=lambda _: None)
+            preserved = u.write_snapshot(root, snapshot, sample, probe)
+            self.assertEqual(preserved['retryFailureHistory'], snapshot['retryFailureHistory'])
+            self.assertEqual(preserved['refresh'], previous['refresh'])
+            # A new full run discards prior-cycle retry tracking.
+            full, full_report = u.refresh_games(updated, NOW, lambda _: page(),
+                lambda _: True, pause=lambda _: None)
+            fresh = u.write_snapshot(root, preserved, full, full_report)
+            self.assertNotIn('retryFailureHistory', fresh)
+            self.assertNotIn('retry', fresh)
 
     def test_immutable_parts_and_catalogue_readback(self):
         with tempfile.TemporaryDirectory() as directory:
