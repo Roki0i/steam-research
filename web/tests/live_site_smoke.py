@@ -32,7 +32,7 @@ def check_desktop(browser):
         "buffer": b"appid,name,month,avg_players,peak_players\n730,PORTFOLIO CSV TEST,2026-10,20,30\n",
     })
     page.locator("#import-submit").click()
-    page.locator("#game-title").get_by_text("PORTFOLIO CSV TEST", exact=True).wait_for(timeout=15000)
+    page.wait_for_function("document.querySelector('#game-title')?.textContent === 'PORTFOLIO CSV TEST'", timeout=15000)
     assert "PORTFOLIO CSV TEST" in page.locator("#game-title").inner_text()
     page.screenshot(path=str(SCREENSHOTS / "steam-csv.png"), full_page=True)
     assert not errors, f"Browser JavaScript errors: {errors}"
