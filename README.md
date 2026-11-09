@@ -6,6 +6,20 @@
 
 **[Steam Player Observatoryを開く](https://roki0i.github.io/steam-research/)**
 
+### ポートフォリオ概要
+
+卒業研究で収集したSteamの1,000タイトルを、**検索・期間比較・CSV持ち込みができるブラウザ分析ツール**として公開。静的Webアプリと月次収集処理を実装し、データの根拠・欠損・更新失敗も確認できる構成にしました。
+
+| 観点 | 実装上の工夫 |
+| --- | --- |
+| Web | JavaScript ES Modules / SVG / レスポンシブUI。外部APIキーなしで起動 |
+| データ | 分割JSONを必要なゲームだけ読込。月次平均同時接続数と前月比を表示 |
+| 研究上の注意 | 「平均同時接続数」を月間ユーザー数や個人の離脱率と混同せず、観測月の違いも明示 |
+| 運用 | GitHub Actionsで月次更新、失敗時は旧値を保持。失敗タイトルのみ手動再取得可能 |
+| 検証 | Node.js / Pythonテスト、公開サイトのChromium PC・スマホ画面サイズ検証、CSV読込テスト |
+
+[自動テスト結果](https://github.com/Roki0i/steam-research/actions/workflows/web-checks.yml) · [公開画面のスクリーンショット（Actionsの成果物）](https://github.com/Roki0i/steam-research/actions/workflows/pages.yml)
+
 取得済み1,000タイトルの月次人数データを表示する。ゲーム名／App ID検索、ジャンル絞り込み、名前順・保存最終月の人数順、月次グラフ、期間変更、月選択、前後ボタン、キーボード対応スライダー、月次表、CSV保存、共有リンクに対応する。
 
 画面はゲームと人数に絞り、ニュース表示・ニュースCSV読込は含めない。初期選択は一覧先頭ゲームの保存最終月。「例で試してみる」や「使い方」で操作を確認できる。
