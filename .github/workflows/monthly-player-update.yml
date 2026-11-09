@@ -16,6 +16,7 @@ on:
         required: true
         type: boolean
   push:
+    branches: [main]
     paths:
       - '.github/workflows/monthly-player-update.yml'
       - 'web/scripts/update_players.py'
@@ -64,10 +65,15 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'Refresh monthly player data and update status'
           git push origin HEAD:main
+      - name: Prepare read-only update diagnostics
+        if: always()
+        run: python web/scripts/update_players.py --diagnostics > "$RUNNER_TEMP/player-diagnostics.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: player-update-report
-          path: ${{ runner.temp }}/player-update.json
+          path: |
+            ${{ runner.temp }}/player-update.json
+            ${{ runner.temp }}/player-diagnostics.json
           if-no-files-found: ignore
           retention-days: 14

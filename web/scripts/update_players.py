@@ -134,6 +134,73 @@ def failed_app_ids(catalogue):
             and entry['appid'] not in resolved]
 
 
+def updated_retry_failure_history(previous, report):
+    """Track retry failures from the latest available record onward, not from guesses.
+
+    A pre-migration snapshot only retains its last retry; seed that single attempt.
+    Earlier attempts cannot be reconstructed and must never be presented as counted.
+    """
+    history = copy.deepcopy(previous.get('retryFailureHistory', {}))
+    if 'retryFailureHistory' not in previous:
+        last = previous.get('retry', {})
+        if last.get('scope') == 'retry':
+            for error in last.get('errors', []):
+                appid = error.get('appid')
+                if isinstance(appid, int):
+                    history[str(appid)] = {
+                        'failedRetryAttempts': 1,
+                        'lastError': error.get('error', '')[:180],
+                        'lastAttemptAt': last.get('lastAttemptAt')}
+    for error in report.get('errors', []):
+        appid = error.get('appid')
+        if not isinstance(appid, int): continue
+        key = str(appid)
+        prior = history.get(key, {})
+        history[key] = {
+            'failedRetryAttempts': prior.get('failedRetryAttempts', 0) + 1,
+            'lastError': error.get('error', '')[:180],
+            'lastAttemptAt': report.get('lastAttemptAt')}
+    return history
+
+
+def diagnostic_report(catalogue):
+    """Produce a read-only investigation summary; no network or data edits."""
+    refresh = catalogue.get('refresh') or {}
+    retry = catalogue.get('retry') or {}
+    history = catalogue.get('retryFailureHistory') or {}
+    resolved = set(retry.get('resolvedAppIds', []))
+    games = {item['id']: item.get('name', '') for item in catalogue.get('games', [])}
+    total, attempted = refresh.get('total'), refresh.get('attempted')
+    missing_count = max(0, total - attempted) if isinstance(total, int) and isinstance(attempted, int) else None
+    known_missing = refresh.get('unattemptedAppIds')  # None for old reports.
+    latest_errors = {item['appid']: item.get('error', '') for item in retry.get('errors', [])
+                     if isinstance(item, dict) and isinstance(item.get('appid'), int)}
+    unresolved = []
+    for appid in failed_app_ids(catalogue):
+        record = history.get(str(appid), {})
+        full_error = next((e.get('error', '') for e in refresh.get('errors', [])
+                          if e.get('appid') == appid), '')
+        unresolved.append({
+            'appid': appid, 'name': games.get(appid, ''),
+            'trackedRetryFailures': record.get('failedRetryAttempts'),
+            'lastRetryFailureAt': record.get('lastAttemptAt'),
+            'error': latest_errors.get(appid, record.get('lastError', full_error))})
+    unresolved.sort(key=lambda e: (-(e['trackedRetryFailures'] or 0), e['appid']))
+    return {
+        'lastFullAttemptAt': refresh.get('lastAttemptAt'),
+        'fullStatus': refresh.get('status'), 'fullTotal': total,
+        'fullSucceeded': refresh.get('successful'), 'fullFailed': refresh.get('failed'),
+        'fullNotAttemptedCount': missing_count,
+        'fullNotAttemptedAppIds': known_missing,
+        'resolvedFailedAppIds': sorted(resolved),
+        'unresolvedFailedCount': len(unresolved),
+        'lastRetryAt': retry.get('lastAttemptAt'), 'lastRetryStatus': retry.get('status'),
+        'lastRetryAttempted': retry.get('attempted'),
+        'lastRetryNotAttemptedAppIds': retry.get('unattemptedAppIds'),
+        'unresolvedTitles': unresolved,
+        'note': 'trackedRetryFailures excludes unrecorded earlier runs; null means no tracked history'}
+    
+
 def refresh_games(games, now, fetch, allowed, limit=0, pause=time.sleep, interval=3, selected_ids=None):
     result = copy.deepcopy(games)
     pool = [game for game in result if selected_ids is None or game['id'] in selected_ids]
@@ -174,6 +241,9 @@ def refresh_games(games, now, fetch, allowed, limit=0, pause=time.sleep, interva
                 report['stopped'] = True
                 report['stopReason'] = 'Access blocked' if isinstance(error, AccessBlocked) else 'Five consecutive failures'
                 break
+    if scope in ('full', 'retry'):
+        # Capture exact IDs before sorting catalogue by player count for storage.
+        report['unattemptedAppIds'] = [g['id'] for g in pool[report['attempted']:target]]
     report['lastAttemptAt'] = stamp
     report['status'] = ('failed' if report['successful'] == 0 else
                         'partial' if report['failed'] or report['stopped'] else
@@ -222,9 +292,12 @@ def write_snapshot(root, previous, games, report):
     if scope == 'retry':
         resolved = set(previous.get('retry', {}).get('resolvedAppIds', []))
         snapshot['retry'] = report | {'resolvedAppIds': sorted(resolved | set(report.get('updatedAppIds', [])))}
+        snapshot['retryFailureHistory'] = updated_retry_failure_history(previous, report)
     elif retain_full and scope == 'sample':
         snapshot['probe'] = report
         if 'retry' in previous: snapshot['retry'] = previous['retry']
+        if 'retryFailureHistory' in previous:
+            snapshot['retryFailureHistory'] = previous['retryFailureHistory']
     # Commit the catalogue last, after every immutable part is present.
     atomic_json(root / 'snapshot.json', snapshot)
     # Preserve the previous generation and the original bundled baseline for cached readers.
@@ -238,11 +311,17 @@ def main():
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--limit', type=int, default=0, help='0 means all titles; a smaller run is explicitly labelled sample')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--diagnostics', action='store_true',
+                        help='print current failure and unattempted-title details without network access')
     parser.add_argument('--retry-failed', action='store_true',
                         help='manually retry only unresolved IDs from the last full-run errors')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     if args.limit < 0: parser.error('limit must be non-negative')
+    if args.diagnostics:
+        snapshot = json.loads((args.root / 'snapshot.json').read_text(encoding='utf-8'))
+        print(json.dumps(diagnostic_report(snapshot), ensure_ascii=False, indent=2))
+        return
     previous, games = load_games(args.root)
     selected_ids = set(failed_app_ids(previous)) if args.retry_failed else None
     if args.retry_failed and not selected_ids:
