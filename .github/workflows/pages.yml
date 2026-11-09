@@ -56,3 +56,26 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  smoke:
+    name: Public desktop/mobile browser smoke
+    needs: [validate, deploy]
+    if: ${{ always() && needs.validate.result == 'success' && (github.event_name == 'pull_request' || needs.deploy.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check -r web/requirements-browser.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python web/tests/live_site_smoke.py
+      - name: Upload actual public-site screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: steam-public-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
