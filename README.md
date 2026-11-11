@@ -1,136 +1,58 @@
-# Steamゲームのプレイヤー推移分析
+# Steam Player Observatory
 
-2027年 安形ゼミの研究。Steamゲームの月間平均同時接続数の変化を扱う。
+Steamの**1,000タイトルの月次平均同時接続数**を検索・比較できるデータ分析Webアプリです。大学の研究で収集したデータを使い、変化の傾向を探索します。
 
-## Webアプリ
+**[Webアプリを開く](https://roki0i.github.io/steam-research/)** · [Web CI](https://github.com/Roki0i/steam-research/actions/workflows/web-checks.yml)
 
-**[Steam Player Observatoryを開く](https://roki0i.github.io/steam-research/)**
+## できること
 
-### ポートフォリオ概要
+- ゲーム名・App ID・ジャンルで検索し、月次グラフ・前月比・表を表示
+- 期間変更、CSV保存、共有リンク、独自CSV（最大20MB・20万行）のブラウザ内読込
+- 更新日・取得失敗・観測月の違いを明示。ライト/ダーク表示に対応
+- Pythonで**前年同月比とジャンル別の探索的集計**を実行
 
-卒業研究で収集したSteamの1,000タイトルを、**検索・期間比較・CSV持ち込みができるブラウザ分析ツール**として公開。静的Webアプリと月次収集処理を実装し、データの根拠・欠損・更新失敗も確認できる構成にしました。
+**技術**：JavaScript ES Modules / SVG / Python / GitHub Pages・Actions。表示データは必要な分割JSONだけを読み込みます。
 
-| 観点 | 実装上の工夫 |
-| --- | --- |
-| Web | JavaScript ES Modules / SVG / レスポンシブUI。外部APIキーなしで起動 |
-| データ | 分割JSONを必要なゲームだけ読込。月次平均同時接続数と前月比を表示 |
-| 研究上の注意 | 「平均同時接続数」を月間ユーザー数や個人の離脱率と混同せず、観測月の違いも明示 |
-| 運用 | GitHub Actionsで月次更新、失敗時は旧値を保持。失敗タイトルのみ手動再取得可能 |
-| 検証 | Node.js / Pythonテスト、公開サイトのChromium PC・スマホ画面サイズ検証、CSV読込テスト |
+## ローカルで見る
 
-[自動テスト結果](https://github.com/Roki0i/steam-research/actions/workflows/web-checks.yml) · [公開画面のスクリーンショット（Actionsの成果物）](https://github.com/Roki0i/steam-research/actions/workflows/pages.yml)
-
-取得済み1,000タイトルの月次人数データを表示する。ゲーム名／App ID検索、ジャンル絞り込み、名前順・保存最終月の人数順、月次グラフ、期間変更、月選択、前後ボタン、キーボード対応スライダー、月次表、CSV保存、共有リンクに対応する。
-
-画面はゲームと人数に絞り、ニュース表示・ニュースCSV読込は含めない。初期選択は一覧先頭ゲームの保存最終月。「例で試してみる」や「使い方」で操作を確認できる。
-
-ライト／ダーク表示はブラウザ・OSの既定設定（`prefers-color-scheme`）に自動追従する。ページを開いたまま設定が変わっても切り替わり、選択状態は維持する。フォーム・表・グラフ・ダイアログも同じ配色に対応。
-
-GitHub Pages（Settings → Pages → Build and deployment → Source: GitHub Actions）で公開する。初回公開には管理者によるPagesの有効化とデプロイ成功の確認が必要。公開URLは上記。
-
-### ローカル起動・検証
-
-Webアプリは外部パッケージ・APIキー不要。Python 3とNode.js 24を使う。
+Python 3、テストにはNode.js 24を使用します。
 
 ```bash
 python -m http.server 8000 --directory web
-```
-
-`http://localhost:8000` を開く。ファイルの直接オープンではJSONを取得できないためHTTPサーバーを使用する。
-
-```bash
 node --test web/tests/*.test.mjs
-node --check web/app.mjs
-node --check web/csv.mjs
+python -m unittest discover -s web/tests -p 'test_*.py'
 ```
 
-### データの意味
+`http://localhost:8000`へアクセスしてください。CSVは `appid,name,month,avg_players` が必須で、`category,peak_players,collected_at` は任意です。読み込んだCSVはブラウザのメモリ内だけで処理し、サーバーへ送信・永続保存しません。
 
-- 出典：[SteamCharts](https://steamcharts.com/)。初期データは2026-08-25収集。以後の取得状況は画面に表示する。研究で取得した1,000タイトルを掲載しており、Steam全体を網羅するデータではない。
-- 平均同時接続数は、月間利用者数・ゲーム所有者数・個人の離脱率ではない。表示の人数だけで変化の原因は判断できない。
-- 一覧の人数・並び順は、各ゲームの保存最終月の平均同時接続数に基づく。各行に対象年月を表示する。観測期間はゲームごとに異なり、同一月のランキングではない。保存最終月が直近の完了月より古いゲームには注意を表示する。
-- 前月比＝（当月平均÷前月平均−1）×100。連続した月があり、前月平均が正の場合のみ計算。表示期間の直前月も元データにあれば比較する。
-- GitHub Actionsで毎月2日、日本時間9:23頃に完了済みの暦月の取得を試行する。全件更新できたかは画面の更新状況で確認でき、少数タイトルの動作確認は全件更新として表示しない。スケジュールは混雑時に遅延する場合がある。
+## データから探索する
 
-### 公開用データの管理
-
-`web/snapshot.json` は全タイトルの目録・保存最終月の値・分割先。`web/data/players-*.json` は全1,000タイトルの月次人数。選択したゲームの分割ファイルだけを読み込み、キャッシュする。一覧は50件ずつ追加表示する。元CSVはGit管理外。
-
-公開するのはゲーム名・App ID・ジャンル・観測年月・平均／最大同時接続数・出典・収集日の情報。レビュー・ニュース・投稿者情報は含めない。入力CSVのSHA-256を目録に記録する。
-
-```bash
-python web/scripts/prepare_data.py /path/to/steamcharts_monthly_clean.csv
-node --test web/tests/*.test.mjs
-```
-
-取得済みタイトルをすべて抽出する。公開用タイトルの固定リストは使わない。
-
-### 自分のCSV
-
-「CSVを読み込む」からUTF-8・カンマ区切り、20MB以下・20万行以内のプレイヤー数CSVを選ぶ。
-
-| 必須列 | 任意列・互換形式 |
-| --- | --- |
-| `appid, name, month, avg_players` | `category, peak_players, collected_at`。`month_date`も可。年月はYYYY-MM・YYYY-MM-DD・英語月名に対応 |
-
-ブラウザのメモリー内だけで処理し、サーバーへ送信・永続保存しない。再読み込みで取得済みデータに戻る。CSV内容は共有リンクに含まれない。
-
-不正な値・列不足・異なる値の重複はエラーを表示して現在のデータを維持する。同値の重複は統合。最大同時接続数が未入力なら「—」を表示。保存するCSVはApp ID・ゲーム名を含み、そのまま再読込できる。「試せるサンプルCSV」は取得済みゲーム1本の実データを保存する。
-
-### 構成・公開
-
-- `app.mjs`：一覧・遅延読込・画面操作・SVG描画
-- `model.mjs`：期間・前月比・減少月・CSV出力
-- `csv.mjs`：プレイヤー数CSVの解析・検証
-- `scripts/prepare_data.py`：公開用データの生成
-
-静的ホスティングには `index.html`、`style.css`、`app.mjs`、`model.mjs`、`csv.mjs`、`dataset.mjs`、`snapshot.json`、`favicon.svg` と **`data/` 全体**を配置する。画面のコード変更は再デプロイが必要。月次データはGitHubの公開JSONを直接読み込むため、データだけの更新では再デプロイ不要。通信失敗時は同梱データへ戻り、その旨を表示する。
-
-## 研究スクリプト
-
-### 公開データの探索（読み取り専用）
-
-既存の公開JSON（1,000タイトルの月次平均同時接続数）を使って、**前年同月比**の方向とジャンルごとの分布を探索できます。収集元へのアクセス、元CSVや公開JSONの書き換え、外部パッケージは不要です。
+公開JSONを読むだけで、前年同月比の増減・中央値・カテゴリー別の比較可能数を確認できます。**ネットワークアクセスやデータ更新はしません。**
 
 ```bash
 python web/scripts/explore_players.py
 python web/scripts/explore_players.py --end-month 2026-10 --json
 ```
 
-既定では公開目録の最新月とその12か月前を比較し、基準月の平均同時接続数が10未満のゲームを除外します。集計は前年同月の両方が存在するゲームのみで、増減20%以上・±20%以内の件数、中央値、カテゴリー別の比較可能数、変化が大きい具体例（基準月100以上）を表示します。欠損月は0で埋めません。月や基準値は`--end-month`・`--min-start-average`で変更可能です。
+基準月の平均が10未満、または比較する月が欠損するゲームは除外します。元CSVはGit管理外。研究側の収集・分析スクリプトはリポジトリ直下にあります。
 
-これは**探索的な記述集計**です。収集したゲームはSteam全体の無作為標本ではなく、ジャンルごとの収集数・観測期間も異なります。平均同時接続数の変化は個人の離脱率や変化の原因を示しません。
+## データの準備・更新
 
-
-研究データは `data/`（ColabではGoogle Drive上のデータディレクトリ）で扱う。CSVはGit管理しない。
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-- `game_candidates_collect.py`：ゲーム候補の収集
-- `steamcharts_collect.py`：月次同時接続数の収集
-- `steam_collect.py`：プレイヤー数・レビュー・ニュースの収集
-- `decline_analysis.py`：減少傾向の集計
-- `factor_data_collect.py` / `factor_news_collect_3to12.py`：要因調査用データの収集
-- `factor_analysis.py` / `04_statistical_analysis.py`：要因・統計分析
-- `jev_*.py`：ニュース分類・人手評価用処理
-
-各スクリプトの入力ファイル名・収集条件はコード内の定数を確認する。既存研究の統計分析はWebアプリのテスト対象には含まない。
-
-### 月次データの自動更新
-
-`.github/workflows/monthly-player-update.yml` が公開JSONを更新する。PCの起動やAPIキーは不要。Actionsの「Monthly player update」から手動実行でき、`limit=0` は全1,000タイトル、正の数は動作確認用の件数。収集コード変更時のpushでは3件のみ確認し、全件更新とは区別して表示する。
+公開データの目録は `web/snapshot.json`、月次データは `web/data/players-*.json` です。
 
 ```bash
-python -m unittest discover -s web/tests -p 'test_*.py'
+python web/scripts/prepare_data.py /path/to/steamcharts_monthly_clean.csv
+python web/scripts/update_players.py --diagnostics
 python web/scripts/update_players.py --limit 3 --dry-run
 ```
 
-SteamChartsの月次表から完了済みの暦月だけを統合する。「Last 30 Days」や当月は除外し、欠損月を0で補完しない。研究用CSVは書き換えない。既存の月次値は収集元の訂正があれば更新する。
+[Monthly player update](https://github.com/Roki0i/steam-research/actions/workflows/monthly-player-update.yml)は原則毎月2日に実行。push時の3件試験は全件更新ではありません。失敗した取得は旧値を保持し、未処理・失敗の状況を画面と診断に記録します。手動の失敗対象再試行はActionsで `retry_failed=true` を指定します。
 
-アクセス間隔は最低3秒。robots.txtで禁止された場合、403/429や人間確認を検出した場合は停止する。通常の失敗が5件連続した場合も停止。失敗したゲームは元データを保持する。取得結果をActionsのレポートと目録に記録し、失敗・一部成功のジョブは失敗として表示する。全件は約50分以上かかる。失敗タイトルの再試行はActionsの手動実行で `retry_failed=true` を選ぶと、直近の全件試行で失敗が記録されたApp IDだけを対象にする。`limit=0` は対象全件、正の数は上限。直前の全件試行の成否は上書きせず、再試行結果を別の `retry` に記録する。未処理タイトルは次回の全件実行で扱う。再試行もrobots.txt・最低3秒間隔・アクセス拒否時停止を遵守する。
+**SteamChartsのrobots.txt・アクセス間隔（最低3秒）・403/429・人間確認による停止条件を守り、失敗時に連続して再試行しないでください。**
 
-失敗が続くタイトルの確認は `python web/scripts/update_players.py --diagnostics` で行う（ネットワークアクセス・データ変更なし）。未解決App ID、直近のエラー、追跡開始後の再取得失敗回数、未処理タイトル数をJSONで表示し、Actionsでもレポートとして保存する。次回の全件実行から、停止時に未処理だったApp IDも記録する。以前の全件実行は未処理の**件数のみ**分かり、IDは推測で補完しない。古い失敗回数は完全には復元できず、保存されていた直近1回の再取得結果から追跡を開始する。公開画面の復旧件数は最新の試行結果ではなく累計の解決済み件数で表示する。
+## 解釈上の制約
 
-目録の`refresh`に成功件数・対象件数・最終試行日・最終全件成功日、ゲームごとの`lastCheckedAt`に取得確認日を記録する。分割JSONは内容のハッシュを名前に含め、現在と直前世代を保持する。初期データの分割ファイルも残す。入力CSVのハッシュは`baselineInputSha256`として保持する。
+- 出典は[SteamCharts](https://steamcharts.com/)。月間**平均同時接続数**は月間の固有人数や個人の離脱率ではなく、変化の原因も示しません。
+- 1,000タイトルはSteam全体の無作為標本ではなく、各ゲームの観測期間・取得月が異なります。
+- 前月比は連続した月と正の前月平均がある場合だけ計算し、欠損を0として扱いません。
+- 公開データはゲーム・人数・出典等の情報で、レビュー本文・投稿者情報は含めません。
